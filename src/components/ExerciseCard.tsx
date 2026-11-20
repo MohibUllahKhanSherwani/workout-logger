@@ -6,33 +6,19 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  LoggedStrengthExercise,
-  SetType,
-  WorkoutSet,
-} from '@/types/workout';
+import { LoggedStrengthExercise, WorkoutSet } from '@/types/workout';
 import { useWorkout } from '@/context/WorkoutContext';
 
 interface Props {
   exercise: LoggedStrengthExercise;
-  onOpenTimer?: () => void;
 }
 
-const SET_TYPES: { label: string; value: SetType }[] = [
-  { label: 'N', value: 'normal' },
-  { label: 'W', value: 'warmup' },
-  { label: 'D', value: 'drop' },
-  { label: 'F', value: 'failure' },
-];
-
-export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
-  const {
-    updateStrengthExercise,
-    removeExerciseFromCurrentWorkout,
-    preferredUnit,
-  } = useWorkout();
+export const ExerciseCard: React.FC<Props> = ({ exercise }) => {
+  const { updateStrengthExercise, removeExerciseFromWorkout, preferredUnit } =
+    useWorkout();
 
   const handleAddSet = () => {
     const sets = exercise.sets || [];
@@ -40,10 +26,8 @@ export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
     const newSet: WorkoutSet = {
       id: `set_${Date.now()}_${sets.length + 1}`,
       setNumber: sets.length + 1,
-      type: lastSet ? lastSet.type : 'normal',
       weight: lastSet ? lastSet.weight : 0,
       reps: lastSet ? lastSet.reps : 10,
-      rpe: lastSet?.rpe,
       completed: false,
       previousHint: lastSet?.previousHint,
     };
@@ -75,22 +59,16 @@ export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
     });
   };
 
-  const cycleSetType = (set: WorkoutSet) => {
-    const currentIndex = SET_TYPES.findIndex((t) => t.value === set.type);
-    const nextIndex = (currentIndex + 1) % SET_TYPES.length;
-    handleUpdateSet(set.id, { type: SET_TYPES[nextIndex].value });
-  };
-
   const confirmDeleteExercise = () => {
     Alert.alert(
-      'Remove Exercise',
-      `Are you sure you want to remove "${exercise.exerciseName}" from this workout?`,
+      'Remove',
+      `Remove "${exercise.categoryName}" from this workout?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => removeExerciseFromCurrentWorkout(exercise.id),
+          onPress: () => removeExerciseFromWorkout(exercise.id),
         },
       ]
     );
@@ -98,26 +76,16 @@ export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
 
   return (
     <View style={styles.card}>
-      {/* Exercise Card Header */}
+      {/* Header */}
       <View style={styles.cardHeader}>
         <View style={styles.headerLeft}>
-          <Text style={styles.exerciseTitle}>{exercise.exerciseName}</Text>
-          <View style={styles.badgeRow}>
-            <Text style={styles.categoryBadge}>{exercise.category}</Text>
-            <Text style={styles.unitBadge}>{exercise.weightUnit || preferredUnit}</Text>
-          </View>
+          <Text style={styles.categoryTitle}>{exercise.categoryName}</Text>
+          <Text style={styles.unitBadge}>{exercise.weightUnit || preferredUnit}</Text>
         </View>
 
-        <View style={styles.headerRight}>
-          {onOpenTimer && (
-            <TouchableOpacity onPress={onOpenTimer} style={styles.headerIconBtn}>
-              <Ionicons name="timer-outline" size={20} color="#0284c7" />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity onPress={confirmDeleteExercise} style={styles.headerIconBtn}>
-            <Ionicons name="trash-outline" size={18} color="#ef4444" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={confirmDeleteExercise} style={styles.deleteBtn}>
+          <Ionicons name="trash-outline" size={18} color="#ef4444" />
+        </TouchableOpacity>
       </View>
 
       {/* Sets Table Header */}
@@ -131,111 +99,80 @@ export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
       </View>
 
       {/* Set Rows */}
-      {exercise.sets.map((set) => {
-        const isWarmup = set.type === 'warmup';
-        const isDrop = set.type === 'drop';
-        const isFailure = set.type === 'failure';
-
-        let badgeStyle = styles.typeNormal;
-        if (isWarmup) badgeStyle = styles.typeWarmup;
-        if (isDrop) badgeStyle = styles.typeDrop;
-        if (isFailure) badgeStyle = styles.typeFailure;
-
-        return (
-          <View
-            key={set.id}
-            style={[styles.setRow, set.completed && styles.setRowCompleted]}
-          >
-            {/* Set number & type button */}
-            <TouchableOpacity
-              style={[styles.colSet, styles.setNumberBtn, badgeStyle]}
-              onPress={() => cycleSetType(set)}
-            >
-              <Text style={styles.setNumberText}>
-                {set.type === 'normal'
-                  ? set.setNumber
-                  : set.type.substring(0, 1).toUpperCase()}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Previous performance hint */}
-            <View style={styles.colPrev}>
-              <Text style={styles.prevText} numberOfLines={1}>
-                {set.previousHint || '-'}
-              </Text>
-            </View>
-
-            {/* Weight Input */}
-            <View style={[styles.colInput, styles.inputContainer]}>
-              <TextInput
-                style={[styles.numericInput, set.completed && styles.inputCompleted]}
-                keyboardType="numeric"
-                defaultValue={set.weight ? String(set.weight) : ''}
-                placeholder="0"
-                placeholderTextColor="#94a3b8"
-                onChangeText={(val) => {
-                  const num = parseFloat(val);
-                  handleUpdateSet(set.id, { weight: isNaN(num) ? 0 : num });
-                }}
-              />
-            </View>
-
-            {/* Reps Input */}
-            <View style={[styles.colInput, styles.inputContainer]}>
-              <TextInput
-                style={[styles.numericInput, set.completed && styles.inputCompleted]}
-                keyboardType="numeric"
-                defaultValue={set.reps ? String(set.reps) : ''}
-                placeholder="0"
-                placeholderTextColor="#94a3b8"
-                onChangeText={(val) => {
-                  const num = parseInt(val, 10);
-                  handleUpdateSet(set.id, { reps: isNaN(num) ? 0 : num });
-                }}
-              />
-            </View>
-
-            {/* Completed Checkbox */}
-            <TouchableOpacity
-              style={[styles.colDone, styles.checkBtn, set.completed && styles.checkBtnActive]}
-              onPress={() => handleUpdateSet(set.id, { completed: !set.completed })}
-            >
-              <Ionicons
-                name={set.completed ? 'checkmark' : 'checkmark-outline'}
-                size={18}
-                color={set.completed ? '#ffffff' : '#94a3b8'}
-              />
-            </TouchableOpacity>
-
-            {/* Delete Set */}
-            <TouchableOpacity
-              style={[styles.colDel, styles.deleteSetBtn]}
-              onPress={() => handleDeleteSet(set.id)}
-            >
-              <Ionicons name="close" size={16} color="#cbd5e1" />
-            </TouchableOpacity>
+      {exercise.sets.map((set) => (
+        <View
+          key={set.id}
+          style={[styles.setRow, set.completed && styles.setRowCompleted]}
+        >
+          {/* Set Number */}
+          <View style={[styles.colSet, styles.setNumberBox]}>
+            <Text style={styles.setNumberText}>{set.setNumber}</Text>
           </View>
-        );
-      })}
+
+          {/* Previous Hint */}
+          <View style={styles.colPrev}>
+            <Text style={styles.prevText} numberOfLines={1}>
+              {set.previousHint || '-'}
+            </Text>
+          </View>
+
+          {/* Weight Input */}
+          <View style={[styles.colInput, styles.inputContainer]}>
+            <TextInput
+              style={[styles.numericInput, set.completed && styles.inputCompleted]}
+              keyboardType="numeric"
+              defaultValue={set.weight ? String(set.weight) : ''}
+              placeholder="0"
+              placeholderTextColor="#94a3b8"
+              onChangeText={(val) => {
+                const num = parseFloat(val);
+                handleUpdateSet(set.id, { weight: isNaN(num) ? 0 : num });
+              }}
+            />
+          </View>
+
+          {/* Reps Input */}
+          <View style={[styles.colInput, styles.inputContainer]}>
+            <TextInput
+              style={[styles.numericInput, set.completed && styles.inputCompleted]}
+              keyboardType="numeric"
+              defaultValue={set.reps ? String(set.reps) : ''}
+              placeholder="0"
+              placeholderTextColor="#94a3b8"
+              onChangeText={(val) => {
+                const num = parseInt(val, 10);
+                handleUpdateSet(set.id, { reps: isNaN(num) ? 0 : num });
+              }}
+            />
+          </View>
+
+          {/* Done Checkbox */}
+          <TouchableOpacity
+            style={[styles.colDone, styles.checkBtn, set.completed && styles.checkBtnActive]}
+            onPress={() => handleUpdateSet(set.id, { completed: !set.completed })}
+          >
+            <Ionicons
+              name={set.completed ? 'checkmark' : 'checkmark-outline'}
+              size={18}
+              color={set.completed ? '#ffffff' : '#94a3b8'}
+            />
+          </TouchableOpacity>
+
+          {/* Delete Set */}
+          <TouchableOpacity
+            style={[styles.colDel, styles.deleteSetBtn]}
+            onPress={() => handleDeleteSet(set.id)}
+          >
+            <Ionicons name="close" size={16} color="#cbd5e1" />
+          </TouchableOpacity>
+        </View>
+      ))}
 
       {/* Add Set Button */}
-      <View style={styles.footerRow}>
-        <TouchableOpacity style={styles.addSetBtn} onPress={handleAddSet}>
-          <Ionicons name="add" size={16} color="#0284c7" />
-          <Text style={styles.addSetBtnText}>Add Set</Text>
-        </TouchableOpacity>
-
-        {/* Notes input */}
-        <TextInput
-          style={styles.notesInput}
-          placeholder="Add exercise notes or cues..."
-          placeholderTextColor="#94a3b8"
-          value={exercise.notes || ''}
-          onChangeText={(notes) =>
-            updateStrengthExercise({ ...exercise, notes })
-          }
-        />
-      </View>
+      <TouchableOpacity style={styles.addSetBtn} onPress={handleAddSet}>
+        <Ionicons name="add" size={16} color="#0284c7" />
+        <Text style={styles.addSetBtnText}>Add Set</Text>
+      </TouchableOpacity>
     </View>
   );
 };
@@ -243,39 +180,27 @@ export const ExerciseCard: React.FC<Props> = ({ exercise, onOpenTimer }) => {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
-    marginBottom: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 10,
   },
   headerLeft: {
-    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  exerciseTitle: {
+  categoryTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#0f172a',
-    marginBottom: 4,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  categoryBadge: {
-    fontSize: 11,
-    color: '#0284c7',
-    backgroundColor: '#e0f2fe',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontWeight: '600',
   },
   unitBadge: {
     fontSize: 11,
@@ -287,15 +212,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  headerIconBtn: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#f8fafc',
+  deleteBtn: {
+    padding: 4,
   },
   tableHeader: {
     flexDirection: 'row',
@@ -322,17 +240,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0fdf4',
   },
   colSet: {
-    width: 38,
+    width: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
   colPrev: {
-    flex: 1.2,
+    flex: 1.1,
     paddingHorizontal: 4,
+    justifyContent: 'center',
   },
   colInput: {
-    width: 65,
+    flex: 1.2,
     paddingHorizontal: 3,
+    justifyContent: 'center',
   },
   colDone: {
     width: 36,
@@ -344,28 +264,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  setNumberBtn: {
-    height: 28,
-    borderRadius: 6,
+  setNumberBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    backgroundColor: '#f1f5f9',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  typeNormal: {
-    backgroundColor: '#f1f5f9',
-  },
-  typeWarmup: {
-    backgroundColor: '#fef3c7',
-  },
-  typeDrop: {
-    backgroundColor: '#fee2e2',
-  },
-  typeFailure: {
-    backgroundColor: '#f3e8ff',
   },
   setNumberText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#334155',
+    color: '#475569',
   },
   prevText: {
     fontSize: 11,
@@ -376,15 +286,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   numericInput: {
-    height: 34,
+    minHeight: 38,
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 6,
     textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#0f172a',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+    }),
   },
   inputCompleted: {
     backgroundColor: '#ffffff',
@@ -392,8 +309,8 @@ const styles = StyleSheet.create({
     color: '#166534',
   },
   checkBtn: {
-    height: 30,
-    width: 30,
+    height: 32,
+    width: 32,
     borderRadius: 6,
     backgroundColor: '#f1f5f9',
     justifyContent: 'center',
@@ -403,11 +320,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#22c55e',
   },
   deleteSetBtn: {
-    padding: 4,
-  },
-  footerRow: {
-    marginTop: 10,
-    gap: 8,
+    padding: 2,
   },
   addSetBtn: {
     flexDirection: 'row',
@@ -417,22 +330,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f9ff',
     borderWidth: 1,
     borderColor: '#bae6fd',
-    borderRadius: 8,
-    paddingVertical: 8,
+    borderRadius: 6,
+    paddingVertical: 7,
+    marginTop: 8,
   },
   addSetBtnText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#0284c7',
-  },
-  notesInput: {
-    fontSize: 12,
-    color: '#475569',
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
   },
 });

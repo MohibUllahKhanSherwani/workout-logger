@@ -64,13 +64,12 @@ export function isDateInFilter(dateStr: string, filter: TimeFilter, referenceDat
   const diffDays = diffMs / (1000 * 60 * 60 * 24);
 
   if (diffDays < -0.1) {
-    // future date
     return false;
   }
 
   switch (filter) {
-    case '1day':
-      return diffDays <= 1;
+    case '3days':
+      return diffDays <= 3;
     case '1week':
       return diffDays <= 7;
     case '1month':
@@ -82,12 +81,12 @@ export function isDateInFilter(dateStr: string, filter: TimeFilter, referenceDat
 
 export function getDateFilterRangeLabel(filter: TimeFilter): string {
   switch (filter) {
-    case '1day':
-      return '1 Day (Last 24 Hours)';
+    case '3days':
+      return 'Last 3 Days';
     case '1week':
-      return '1 Week (Last 7 Days)';
+      return 'Last Week';
     case '1month':
-      return '1 Month (Last 30 Days)';
+      return 'Last Month';
     case 'all':
       return 'All Time';
   }

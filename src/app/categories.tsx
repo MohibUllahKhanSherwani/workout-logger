@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,228 +8,149 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useWorkout } from '@/context/WorkoutContext';
-import { CATEGORIES } from '@/constants/default-exercises';
-import { ExerciseDefinition, ExerciseType, MuscleCategory } from '@/types/workout';
+import { CategoryItem, ExerciseType } from '@/types/workout';
 
 export default function CategoriesScreen() {
-  const { exercises, addNewCustomExercise, deleteCustomExercise } = useWorkout();
+  const { categories, createCategory, deleteCategoryById } = useWorkout();
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-
-  // Modal for new category / exercise
   const [modalVisible, setModalVisible] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newCategory, setNewCategory] = useState<MuscleCategory>('Chest');
   const [newType, setNewType] = useState<ExerciseType>('strength');
 
-  const filteredExercises = useMemo(() => {
-    return exercises.filter((ex) => {
-      const matchSearch =
-        ex.name.toLowerCase().includes(search.toLowerCase()) ||
-        ex.category.toLowerCase().includes(search.toLowerCase());
-      const matchCat =
-        selectedCategory === 'All' || ex.category === selectedCategory;
-      return matchSearch && matchCat;
-    });
-  }, [exercises, search, selectedCategory]);
+  const filtered = categories.filter((c) =>
+    c.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
-    await addNewCustomExercise(newName.trim(), newCategory, newType);
+    await createCategory(newName.trim(), newType);
     setNewName('');
     setModalVisible(false);
-    Alert.alert('Saved', `"${newName.trim()}" added to ${newCategory}! It will now appear in your logger dropdown.`);
   };
 
-  const confirmDelete = (exercise: ExerciseDefinition) => {
+  const confirmDelete = (cat: CategoryItem) => {
     Alert.alert(
-      'Delete Exercise',
-      `Delete "${exercise.name}"?`,
+      'Delete Category',
+      `Delete "${cat.name}"? It will no longer appear in the daily log dropdown.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => deleteCustomExercise(exercise.id),
+          onPress: () => deleteCategoryById(cat.id),
         },
       ]
     );
   };
-
-  // Group exercises by category
-  const groupedByCategory = useMemo(() => {
-    const map: Record<string, ExerciseDefinition[]> = {};
-    filteredExercises.forEach((ex) => {
-      if (!map[ex.category]) map[ex.category] = [];
-      map[ex.category].push(ex);
-    });
-    return map;
-  }, [filteredExercises]);
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Categories & Exercises</Text>
+          <Text style={styles.headerTitle}>Categories</Text>
           <Text style={styles.headerSubtitle}>
-            Manage exercises that appear in the log dropdown
+            Add categories (e.g. Bench Press, Incline Press, Run)
           </Text>
         </View>
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => setModalVisible(true)}
         >
-          <Ionicons name="add" size={20} color="#ffffff" />
+          <Ionicons name="add" size={18} color="#ffffff" />
           <Text style={styles.addBtnText}>New</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Search Input */}
+      {/* Search */}
       <View style={styles.searchBar}>
         <Ionicons name="search" size={18} color="#94a3b8" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search categories & exercises..."
+          placeholder="Search categories..."
           placeholderTextColor="#94a3b8"
           value={search}
           onChangeText={setSearch}
         />
-        {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={18} color="#94a3b8" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Category Pills */}
-      <View style={styles.categoryPillsWrapper}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {['All', ...CATEGORIES].map((cat) => {
-            const isSelected = selectedCategory === cat;
-            return (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.catPill, isSelected && styles.catPillActive]}
-                onPress={() => setSelectedCategory(cat)}
-              >
-                <Text
-                  style={[
-                    styles.catPillText,
-                    isSelected && styles.catPillTextActive,
-                  ]}
-                >
-                  {cat}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
       </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {Object.keys(groupedByCategory).length === 0 ? (
+        {categories.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="search" size={40} color="#cbd5e1" />
-            <Text style={styles.emptyTitle}>No exercises found</Text>
+            <Ionicons name="list-outline" size={48} color="#cbd5e1" />
+            <Text style={styles.emptyTitle}>No categories yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Tap &quot;+ New Category&quot; below to add your first category (e.g. Bench Press, Incline Press, Run). Once created, it will show in your daily log dropdown!
+            </Text>
             <TouchableOpacity
               style={styles.createNowBtn}
-              onPress={() => {
-                setNewName(search);
-                setModalVisible(true);
-              }}
+              onPress={() => setModalVisible(true)}
             >
-              <Text style={styles.createNowBtnText}>+ Add &quot;{search}&quot;</Text>
+              <Text style={styles.createNowBtnText}>+ Add First Category</Text>
             </TouchableOpacity>
           </View>
+        ) : filtered.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyTitle}>No match for &quot;{search}&quot;</Text>
+          </View>
         ) : (
-          Object.entries(groupedByCategory).map(([catName, list]) => (
-            <View key={catName} style={styles.categoryCard}>
-              <View style={styles.catHeader}>
-                <Text style={styles.catTitle}>{catName}</Text>
-                <Text style={styles.catCount}>{list.length} exercises</Text>
-              </View>
-
-              {list.map((item) => (
-                <View key={item.id} style={styles.exerciseRow}>
-                  <View style={styles.exerciseLeft}>
-                    <Ionicons
-                      name={item.type === 'cardio' ? 'walk' : 'barbell'}
-                      size={18}
-                      color="#0284c7"
-                    />
-                    <Text style={styles.exerciseName}>{item.name}</Text>
-                  </View>
-
-                  <View style={styles.exerciseRight}>
-                    {item.isCustom ? (
-                      <TouchableOpacity
-                        onPress={() => confirmDelete(item)}
-                        style={styles.deleteExBtn}
-                      >
-                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    ) : (
-                      <Text style={styles.systemBadge}>Default</Text>
-                    )}
+          <View style={styles.categoryCard}>
+            {filtered.map((item) => (
+              <View key={item.id} style={styles.catRow}>
+                <View style={styles.catLeft}>
+                  <Ionicons
+                    name={item.type === 'run' ? 'walk' : 'barbell'}
+                    size={18}
+                    color="#0284c7"
+                  />
+                  <Text style={styles.catName}>{item.name}</Text>
+                  <View style={styles.typeBadge}>
+                    <Text style={styles.typeBadgeText}>
+                      {item.type === 'run' ? 'Run' : 'Strength'}
+                    </Text>
                   </View>
                 </View>
-              ))}
-            </View>
-          ))
+
+                <TouchableOpacity
+                  onPress={() => confirmDelete(item)}
+                  style={styles.deleteBtn}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
         )}
       </ScrollView>
 
-      {/* Add New Category/Exercise Modal */}
+      {/* Modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Category / Exercise</Text>
+              <Text style={styles.modalTitle}>Create Category</Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
                 <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.fieldLabel}>Exercise Name</Text>
+            <Text style={styles.fieldLabel}>Category Name</Text>
             <TextInput
               style={styles.textInput}
-              placeholder="e.g. Bench Press, Incline Press, 5K Run..."
+              placeholder="e.g. Bench Press, Incline Press, Run, Squat..."
               placeholderTextColor="#94a3b8"
               value={newName}
               onChangeText={setNewName}
               autoFocus
             />
-
-            <Text style={styles.fieldLabel}>Category / Muscle Group</Text>
-            <View style={styles.gridCategories}>
-              {CATEGORIES.map((cat) => (
-                <TouchableOpacity
-                  key={cat}
-                  style={[
-                    styles.catOption,
-                    newCategory === cat && styles.catOptionActive,
-                  ]}
-                  onPress={() => setNewCategory(cat)}
-                >
-                  <Text
-                    style={[
-                      styles.catOptionText,
-                      newCategory === cat && styles.catOptionTextActive,
-                    ]}
-                  >
-                    {cat}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
 
             <Text style={styles.fieldLabel}>Type</Text>
             <View style={styles.typeRow}>
@@ -258,22 +179,22 @@ export default function CategoriesScreen() {
               <TouchableOpacity
                 style={[
                   styles.typeOption,
-                  newType === 'cardio' && styles.typeOptionActive,
+                  newType === 'run' && styles.typeOptionActive,
                 ]}
-                onPress={() => setNewType('cardio')}
+                onPress={() => setNewType('run')}
               >
                 <Ionicons
                   name="walk"
                   size={16}
-                  color={newType === 'cardio' ? '#fff' : '#475569'}
+                  color={newType === 'run' ? '#fff' : '#475569'}
                 />
                 <Text
                   style={[
                     styles.typeOptionText,
-                    newType === 'cardio' && styles.typeOptionTextActive,
+                    newType === 'run' && styles.typeOptionTextActive,
                   ]}
                 >
-                  Cardio / Running
+                  Run (Distance & Time)
                 </Text>
               </TouchableOpacity>
             </View>
@@ -293,7 +214,7 @@ export default function CategoriesScreen() {
                 disabled={!newName.trim()}
                 onPress={handleCreate}
               >
-                <Text style={styles.modalSaveText}>Save Exercise</Text>
+                <Text style={styles.modalSaveText}>Save Category</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -333,8 +254,8 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: '#0284c7',
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   addBtnText: {
     color: '#ffffff',
@@ -348,36 +269,20 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 10,
-    height: 42,
+    borderRadius: 8,
+    minHeight: 44,
     gap: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 15,
     color: '#0f172a',
-  },
-  categoryPillsWrapper: {
-    paddingHorizontal: 16,
-    marginBottom: 8,
-  },
-  catPill: {
-    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#f1f5f9',
-    marginRight: 6,
-  },
-  catPillActive: {
-    backgroundColor: '#0284c7',
-  },
-  catPillText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  catPillTextActive: {
-    color: '#ffffff',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+    }),
   },
   scrollView: {
     flex: 1,
@@ -389,88 +294,74 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 50,
-    gap: 12,
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+    gap: 10,
   },
   emptyTitle: {
-    fontSize: 15,
-    color: '#64748b',
-    fontWeight: '600',
+    fontSize: 16,
+    color: '#334155',
+    fontWeight: '700',
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 18,
   },
   createNowBtn: {
     backgroundColor: '#0284c7',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 6,
+    marginTop: 6,
   },
   createNowBtnText: {
     color: '#ffffff',
-    fontWeight: '600',
+    fontWeight: '700',
     fontSize: 13,
   },
   categoryCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    overflow: 'hidden',
   },
-  catHeader: {
+  catRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
-    marginBottom: 8,
   },
-  catTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  catCount: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600',
-  },
-  exerciseRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f8fafc',
-  },
-  exerciseLeft: {
+  catLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     flex: 1,
   },
-  exerciseName: {
+  catName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#1e293b',
+    color: '#0f172a',
   },
-  exerciseRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  deleteExBtn: {
-    padding: 6,
-  },
-  systemBadge: {
-    fontSize: 10,
-    color: '#94a3b8',
+  typeBadge: {
     backgroundColor: '#f1f5f9',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
-
-  // Modal styles
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  deleteBtn: {
+    padding: 6,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
@@ -480,27 +371,27 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: 12,
     width: '100%',
-    maxWidth: 480,
-    padding: 20,
+    maxWidth: 440,
+    padding: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#0f172a',
   },
   fieldLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: '#475569',
-    marginTop: 12,
+    marginTop: 10,
     marginBottom: 6,
   },
   textInput: {
@@ -509,37 +400,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    fontSize: 14,
+    minHeight: 44,
+    fontSize: 15,
     color: '#0f172a',
-  },
-  gridCategories: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  catOption: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  catOptionActive: {
-    backgroundColor: '#0284c7',
-    borderColor: '#0284c7',
-  },
-  catOptionText: {
-    fontSize: 12,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  catOptionTextActive: {
-    color: '#ffffff',
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+    }),
   },
   typeRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
+    marginTop: 4,
   },
   typeOption: {
     flex: 1,
@@ -547,8 +420,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingVertical: 8,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: '#cbd5e1',
     backgroundColor: '#f8fafc',
@@ -558,7 +431,7 @@ const styles = StyleSheet.create({
     borderColor: '#0284c7',
   },
   typeOptionText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#475569',
   },
@@ -568,22 +441,23 @@ const styles = StyleSheet.create({
   modalBtns: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 20,
+    gap: 10,
+    marginTop: 16,
   },
   modalCancelBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   modalCancelText: {
     color: '#64748b',
     fontWeight: '600',
+    fontSize: 13,
   },
   modalSaveBtn: {
     backgroundColor: '#0284c7',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
   },
   modalSaveBtnDisabled: {
     backgroundColor: '#94a3b8',
@@ -591,5 +465,6 @@ const styles = StyleSheet.create({
   modalSaveText: {
     color: '#ffffff',
     fontWeight: '700',
+    fontSize: 13,
   },
 });

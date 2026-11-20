@@ -7,31 +7,29 @@ import React, {
   useMemo,
 } from 'react';
 import {
+  CategoryItem,
   DailyWorkout,
-  ExerciseDefinition,
   ExerciseType,
   LoggedRun,
   LoggedStrengthExercise,
-  MuscleCategory,
   WeightUnit,
 } from '@/types/workout';
 import {
-  deleteExercise,
+  deleteCategory,
   deleteWorkout,
   getLastExercisePerformance,
   getPreferredWeightUnit,
-  getStoredExercises,
+  getStoredCategories,
   getStoredWorkouts,
-  saveExercise,
+  saveCategory,
   saveWorkout,
-  seedDemoDataIfEmpty,
   setPreferredWeightUnit,
 } from '@/storage/workout-storage';
 import { getTodayDateString } from '@/utils/date-helpers';
 
 interface WorkoutContextType {
   workouts: DailyWorkout[];
-  exercises: ExerciseDefinition[];
+  categories: CategoryItem[];
   activeDate: string;
   setActiveDate: (date: string) => void;
   currentWorkout: DailyWorkout;
@@ -39,24 +37,17 @@ interface WorkoutContextType {
   setPreferredUnit: (unit: WeightUnit) => Promise<void>;
   loading: boolean;
   refreshWorkouts: () => Promise<void>;
-  refreshExercises: () => Promise<void>;
-  addExerciseToCurrentWorkout: (exerciseDef: ExerciseDefinition) => void;
-  removeExerciseFromCurrentWorkout: (instanceId: string) => void;
+  refreshCategories: () => Promise<void>;
+  addCategoryToWorkout: (cat: CategoryItem) => void;
+  removeExerciseFromWorkout: (instanceId: string) => void;
   updateStrengthExercise: (exercise: LoggedStrengthExercise) => void;
-  addRunToCurrentWorkout: (name?: string) => void;
-  removeRunFromCurrentWorkout: (instanceId: string) => void;
+  removeRunFromWorkout: (instanceId: string) => void;
   updateRun: (run: LoggedRun) => void;
-  updateGeneralNotes: (notes: string) => void;
   updateTitle: (title: string) => void;
-  updateEnergyRating: (rating: number) => void;
-  addNewCustomExercise: (
-    name: string,
-    category: MuscleCategory,
-    type: ExerciseType
-  ) => Promise<ExerciseDefinition>;
-  deleteCustomExercise: (id: string) => Promise<void>;
+  createCategory: (name: string, type: ExerciseType) => Promise<CategoryItem>;
+  deleteCategoryById: (id: string) => Promise<void>;
   deleteWorkoutForDate: (date: string) => Promise<void>;
-  getLastPerformance: (exerciseId: string) => Promise<string | null>;
+  getLastPerformance: (categoryId: string) => Promise<string | null>;
 }
 
 const WorkoutContext = createContext<WorkoutContextType | null>(null);
@@ -67,38 +58,35 @@ function createEmptyWorkout(date: string): DailyWorkout {
     date,
     exercises: [],
     runs: [],
-    generalNotes: '',
     updatedAt: Date.now(),
   };
 }
 
 export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [workouts, setWorkouts] = useState<DailyWorkout[]>([]);
-  const [exercises, setExercises] = useState<ExerciseDefinition[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [activeDate, setActiveDate] = useState<string>(getTodayDateString());
   const [preferredUnit, setPreferredUnitState] = useState<WeightUnit>('kg');
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Derived current workout based on activeDate and workouts list
+  // Derived current workout
   const currentWorkout = useMemo(() => {
     const existing = workouts.find((w) => w.date === activeDate);
     return existing ? { ...existing } : createEmptyWorkout(activeDate);
   }, [workouts, activeDate]);
 
-  // Initialize and seed demo data if empty
   useEffect(() => {
     let mounted = true;
     const loadInitialData = async () => {
       try {
-        await seedDemoDataIfEmpty();
-        const [storedWorkouts, storedExercises, unit] = await Promise.all([
+        const [storedWorkouts, storedCategories, unit] = await Promise.all([
           getStoredWorkouts(),
-          getStoredExercises(),
+          getStoredCategories(),
           getPreferredWeightUnit(),
         ]);
         if (mounted) {
           setWorkouts(storedWorkouts);
-          setExercises(storedExercises);
+          setCategories(storedCategories);
           setPreferredUnitState(unit);
           setLoading(false);
         }
@@ -119,9 +107,9 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setWorkouts(list);
   }, []);
 
-  const refreshExercises = useCallback(async () => {
-    const list = await getStoredExercises();
-    setExercises(list);
+  const refreshCategories = useCallback(async () => {
+    const list = await getStoredCategories();
+    setCategories(list);
   }, []);
 
   const setPreferredUnit = useCallback(async (unit: WeightUnit) => {
@@ -129,7 +117,6 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setPreferredUnitState(unit);
   }, []);
 
-  // Internal helper to persist workout changes safely
   const persistWorkoutChange = useCallback(
     async (updated: DailyWorkout) => {
       setWorkouts((prev) => {
@@ -144,48 +131,61 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       try {
         await saveWorkout(updated);
       } catch (err) {
-        console.error('Failed to auto-save workout:', err);
+        console.error('Failed to save workout:', err);
       }
     },
     []
   );
 
-  const addExerciseToCurrentWorkout = useCallback(
-    async (exerciseDef: ExerciseDefinition) => {
-      // Fetch last performance to hint initial weight
-      const lastPerf = await getLastExercisePerformance(exerciseDef.id, activeDate);
-
-      const newExercise: LoggedStrengthExercise = {
-        id: `log_ex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        exerciseId: exerciseDef.id,
-        exerciseName: exerciseDef.name,
-        category: exerciseDef.category,
-        type: 'strength',
-        weightUnit: preferredUnit,
-        notes: '',
-        sets: [
-          {
-            id: `set_${Date.now()}_1`,
-            setNumber: 1,
-            type: 'normal',
-            weight: 0,
-            reps: 10,
-            completed: false,
-            previousHint: lastPerf || undefined,
-          },
-        ],
-      };
-
-      const updated: DailyWorkout = {
-        ...currentWorkout,
-        exercises: [...(currentWorkout.exercises || []), newExercise],
-      };
-      await persistWorkoutChange(updated);
+  const addCategoryToWorkout = useCallback(
+    async (category: CategoryItem) => {
+      if (category.type === 'run') {
+        const newRun: LoggedRun = {
+          id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          categoryId: category.id,
+          categoryName: category.name,
+          type: 'run',
+          distance: 0,
+          distanceUnit: 'km',
+          durationMinutes: 0,
+          durationSeconds: 0,
+          pace: '--:--',
+        };
+        const updated: DailyWorkout = {
+          ...currentWorkout,
+          runs: [...(currentWorkout.runs || []), newRun],
+        };
+        await persistWorkoutChange(updated);
+      } else {
+        const lastPerf = await getLastExercisePerformance(category.id, activeDate);
+        const newExercise: LoggedStrengthExercise = {
+          id: `log_ex_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          categoryId: category.id,
+          categoryName: category.name,
+          type: 'strength',
+          weightUnit: preferredUnit,
+          sets: [
+            {
+              id: `set_${Date.now()}_1`,
+              setNumber: 1,
+              weight: 0,
+              reps: 10,
+              completed: false,
+              previousHint: lastPerf || undefined,
+            },
+          ],
+        };
+        const updated: DailyWorkout = {
+          ...currentWorkout,
+          exercises: [...(currentWorkout.exercises || []), newExercise],
+        };
+        await persistWorkoutChange(updated);
+      }
     },
     [activeDate, currentWorkout, persistWorkoutChange, preferredUnit]
   );
 
-  const removeExerciseFromCurrentWorkout = useCallback(
+  const removeExerciseFromWorkout = useCallback(
     async (instanceId: string) => {
       const updated: DailyWorkout = {
         ...currentWorkout,
@@ -209,32 +209,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [currentWorkout, persistWorkoutChange]
   );
 
-  const addRunToCurrentWorkout = useCallback(
-    async (name: string = 'Outdoor Run') => {
-      const newRun: LoggedRun = {
-        id: `run_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        exerciseId: 'outdoor-run',
-        exerciseName: name,
-        category: 'Cardio',
-        type: 'cardio',
-        distance: 0,
-        distanceUnit: 'km',
-        durationMinutes: 0,
-        durationSeconds: 0,
-        pace: '--:--',
-        notes: '',
-      };
-
-      const updated: DailyWorkout = {
-        ...currentWorkout,
-        runs: [...(currentWorkout.runs || []), newRun],
-      };
-      await persistWorkoutChange(updated);
-    },
-    [currentWorkout, persistWorkoutChange]
-  );
-
-  const removeRunFromCurrentWorkout = useCallback(
+  const removeRunFromWorkout = useCallback(
     async (instanceId: string) => {
       const updated: DailyWorkout = {
         ...currentWorkout,
@@ -258,17 +233,6 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [currentWorkout, persistWorkoutChange]
   );
 
-  const updateGeneralNotes = useCallback(
-    async (notes: string) => {
-      const updated: DailyWorkout = {
-        ...currentWorkout,
-        generalNotes: notes,
-      };
-      await persistWorkoutChange(updated);
-    },
-    [currentWorkout, persistWorkoutChange]
-  );
-
   const updateTitle = useCallback(
     async (title: string) => {
       const updated: DailyWorkout = {
@@ -280,42 +244,25 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [currentWorkout, persistWorkoutChange]
   );
 
-  const updateEnergyRating = useCallback(
-    async (rating: number) => {
-      const updated: DailyWorkout = {
-        ...currentWorkout,
-        energyRating: rating,
-      };
-      await persistWorkoutChange(updated);
-    },
-    [currentWorkout, persistWorkoutChange]
-  );
-
-  const addNewCustomExercise = useCallback(
-    async (
-      name: string,
-      category: MuscleCategory,
-      type: ExerciseType
-    ): Promise<ExerciseDefinition> => {
-      const newDef: ExerciseDefinition = {
-        id: `custom_${Date.now()}_${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+  const createCategory = useCallback(
+    async (name: string, type: ExerciseType): Promise<CategoryItem> => {
+      const newCat: CategoryItem = {
+        id: `cat_${Date.now()}_${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
         name: name.trim(),
-        category,
         type,
-        isCustom: true,
-        createdAt: new Date().toISOString(),
+        createdAt: Date.now(),
       };
-      const updatedList = await saveExercise(newDef);
-      setExercises(updatedList);
-      return newDef;
+      const updated = await saveCategory(newCat);
+      setCategories(updated);
+      return newCat;
     },
     []
   );
 
-  const deleteCustomExerciseHandler = useCallback(
+  const deleteCategoryById = useCallback(
     async (id: string) => {
-      const updatedList = await deleteExercise(id);
-      setExercises(updatedList);
+      const updated = await deleteCategory(id);
+      setCategories(updated);
     },
     []
   );
@@ -330,8 +277,8 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const getLastPerformance = useCallback(
-    async (exerciseId: string) => {
-      return getLastExercisePerformance(exerciseId, activeDate);
+    async (categoryId: string) => {
+      return getLastExercisePerformance(categoryId, activeDate);
     },
     [activeDate]
   );
@@ -339,7 +286,7 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const value = useMemo(
     () => ({
       workouts,
-      exercises,
+      categories,
       activeDate,
       setActiveDate,
       currentWorkout,
@@ -347,42 +294,36 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setPreferredUnit,
       loading,
       refreshWorkouts,
-      refreshExercises,
-      addExerciseToCurrentWorkout,
-      removeExerciseFromCurrentWorkout,
+      refreshCategories,
+      addCategoryToWorkout,
+      removeExerciseFromWorkout,
       updateStrengthExercise,
-      addRunToCurrentWorkout,
-      removeRunFromCurrentWorkout,
+      removeRunFromWorkout,
       updateRun,
-      updateGeneralNotes,
       updateTitle,
-      updateEnergyRating,
-      addNewCustomExercise,
-      deleteCustomExercise: deleteCustomExerciseHandler,
+      createCategory,
+      deleteCategoryById,
       deleteWorkoutForDate: deleteWorkoutForDateHandler,
       getLastPerformance,
     }),
     [
       workouts,
-      exercises,
+      categories,
       activeDate,
       currentWorkout,
       preferredUnit,
       setPreferredUnit,
       loading,
       refreshWorkouts,
-      refreshExercises,
-      addExerciseToCurrentWorkout,
-      removeExerciseFromCurrentWorkout,
+      refreshCategories,
+      addCategoryToWorkout,
+      removeExerciseFromWorkout,
       updateStrengthExercise,
-      addRunToCurrentWorkout,
-      removeRunFromCurrentWorkout,
+      removeRunFromWorkout,
       updateRun,
-      updateGeneralNotes,
       updateTitle,
-      updateEnergyRating,
-      addNewCustomExercise,
-      deleteCustomExerciseHandler,
+      createCategory,
+      deleteCategoryById,
       deleteWorkoutForDateHandler,
       getLastPerformance,
     ]

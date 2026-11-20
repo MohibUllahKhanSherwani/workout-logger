@@ -6,6 +6,7 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LoggedRun } from '@/types/workout';
@@ -17,11 +18,10 @@ interface Props {
 }
 
 export const RunCard: React.FC<Props> = ({ run }) => {
-  const { updateRun, removeRunFromCurrentWorkout } = useWorkout();
+  const { updateRun, removeRunFromWorkout } = useWorkout();
 
   const handleUpdate = (updates: Partial<LoggedRun>) => {
     const next = { ...run, ...updates };
-    // recalculate pace
     const distanceKm =
       next.distanceUnit === 'mi'
         ? (next.distance || 0) * 1.60934
@@ -37,13 +37,13 @@ export const RunCard: React.FC<Props> = ({ run }) => {
   const confirmDelete = () => {
     Alert.alert(
       'Remove Run',
-      `Are you sure you want to remove "${run.exerciseName}"?`,
+      `Remove "${run.categoryName}" from this workout?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => removeRunFromCurrentWorkout(run.id),
+          onPress: () => removeRunFromWorkout(run.id),
         },
       ]
     );
@@ -59,13 +59,9 @@ export const RunCard: React.FC<Props> = ({ run }) => {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <View style={styles.iconCircle}>
-            <Ionicons name="walk" size={18} color="#059669" />
-          </View>
-          <View>
-            <Text style={styles.runTitle}>{run.exerciseName}</Text>
-            <Text style={styles.paceBadge}>Pace: {run.pace || '--:--'}</Text>
-          </View>
+          <Ionicons name="walk" size={18} color="#059669" />
+          <Text style={styles.runTitle}>{run.categoryName}</Text>
+          <Text style={styles.paceBadge}>Pace: {run.pace || '--:--'}</Text>
         </View>
 
         <TouchableOpacity onPress={confirmDelete} style={styles.deleteBtn}>
@@ -80,7 +76,7 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           <Text style={styles.statLabel}>Distance</Text>
           <View style={styles.inputWithUnit}>
             <TextInput
-              style={styles.statInput}
+              style={styles.statInputInside}
               keyboardType="numeric"
               placeholder="0.0"
               placeholderTextColor="#94a3b8"
@@ -96,11 +92,11 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           </View>
         </View>
 
-        {/* Duration Minutes */}
+        {/* Minutes */}
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Minutes</Text>
           <TextInput
-            style={styles.statInput}
+            style={styles.statInputStandalone}
             keyboardType="numeric"
             placeholder="0"
             placeholderTextColor="#94a3b8"
@@ -112,11 +108,11 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           />
         </View>
 
-        {/* Duration Seconds */}
+        {/* Seconds */}
         <View style={styles.statBox}>
           <Text style={styles.statLabel}>Seconds</Text>
           <TextInput
-            style={styles.statInput}
+            style={styles.statInputStandalone}
             keyboardType="numeric"
             placeholder="0"
             placeholderTextColor="#94a3b8"
@@ -128,48 +124,6 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           />
         </View>
       </View>
-
-      {/* Secondary Row (HR & Calories) */}
-      <View style={styles.secondaryRow}>
-        <View style={styles.secInputBox}>
-          <Ionicons name="heart-outline" size={14} color="#e11d48" />
-          <TextInput
-            style={styles.secInput}
-            keyboardType="numeric"
-            placeholder="Avg HR (bpm)"
-            placeholderTextColor="#94a3b8"
-            defaultValue={run.avgHeartRate ? String(run.avgHeartRate) : ''}
-            onChangeText={(val) => {
-              const hr = parseInt(val, 10);
-              handleUpdate({ avgHeartRate: isNaN(hr) ? undefined : hr });
-            }}
-          />
-        </View>
-
-        <View style={styles.secInputBox}>
-          <Ionicons name="flame-outline" size={14} color="#ea580c" />
-          <TextInput
-            style={styles.secInput}
-            keyboardType="numeric"
-            placeholder="Calories (kcal)"
-            placeholderTextColor="#94a3b8"
-            defaultValue={run.calories ? String(run.calories) : ''}
-            onChangeText={(val) => {
-              const cal = parseInt(val, 10);
-              handleUpdate({ calories: isNaN(cal) ? undefined : cal });
-            }}
-          />
-        </View>
-      </View>
-
-      {/* Notes / Route */}
-      <TextInput
-        style={styles.notesInput}
-        placeholder="Run notes (e.g. morning road run, hills, felt easy/hard)..."
-        placeholderTextColor="#94a3b8"
-        value={run.notes || ''}
-        onChangeText={(notes) => handleUpdate({ notes })}
-      />
     </View>
   );
 };
@@ -177,9 +131,9 @@ export const RunCard: React.FC<Props> = ({ run }) => {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 14,
-    marginBottom: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#a7f3d0',
   },
@@ -187,20 +141,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-  },
-  iconCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#ecfdf5',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
   },
   runTitle: {
     fontSize: 16,
@@ -213,18 +159,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   deleteBtn: {
-    padding: 6,
+    padding: 4,
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+    gap: 8,
   },
   statBox: {
     flex: 1,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600',
     color: '#64748b',
     marginBottom: 4,
@@ -235,13 +180,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
     borderRadius: 8,
-    paddingRight: 6,
+    minHeight: 40,
+    paddingRight: 4,
+    paddingLeft: 4,
   },
-  statInput: {
+  statInputInside: {
     flex: 1,
-    height: 38,
+    minHeight: 38,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0f172a',
+    textAlign: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+    }),
+  },
+  statInputStandalone: {
+    minHeight: 40,
     fontSize: 15,
     fontWeight: '700',
     color: '#0f172a',
@@ -249,49 +210,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#cbd5e1',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+    ...Platform.select({
+      android: {
+        includeFontPadding: false,
+      },
+    }),
   },
   unitToggle: {
     backgroundColor: '#e2e8f0',
     paddingHorizontal: 6,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 4,
   },
   unitText: {
     fontSize: 11,
     fontWeight: '700',
     color: '#334155',
-  },
-  secondaryRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
-  },
-  secInputBox: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    height: 34,
-  },
-  secInput: {
-    flex: 1,
-    fontSize: 12,
-    color: '#0f172a',
-  },
-  notesInput: {
-    fontSize: 12,
-    color: '#334155',
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
 });
