@@ -56,40 +56,140 @@ export function addDays(dateStr: string, days: number): string {
 export function isDateInFilter(dateStr: string, filter: TimeFilter, referenceDateStr?: string): boolean {
   if (filter === 'all') return true;
 
-  const targetDate = new Date(dateStr + 'T00:00:00');
-  const refDate = referenceDateStr ? new Date(referenceDateStr + 'T00:00:00') : new Date();
-  refDate.setHours(23, 59, 59, 999);
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const targetDate = new Date(year, month - 1, day, 12, 0, 0); // midday to avoid DST offsets
 
-  const diffMs = refDate.getTime() - targetDate.getTime();
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  const refDate = referenceDateStr
+    ? new Date(Number(referenceDateStr.split('-')[0]), Number(referenceDateStr.split('-')[1]) - 1, Number(referenceDateStr.split('-')[2]), 12, 0, 0)
+    : new Date();
 
-  if (diffDays < -0.1) {
-    return false;
-  }
+  // Normalize refDate to noon
+  refDate.setHours(12, 0, 0, 0);
+
+  const refDayOfWeek = refDate.getDay(); // 0 is Sun, 1 is Mon...
+  const diffToMonday = refDayOfWeek === 0 ? -6 : 1 - refDayOfWeek;
+
+  // Monday of this week
+  const thisWeekMonday = new Date(refDate);
+  thisWeekMonday.setDate(refDate.getDate() + diffToMonday);
+  thisWeekMonday.setHours(0, 0, 0, 0);
+
+  // Sunday of this week
+  const thisWeekSunday = new Date(thisWeekMonday);
+  thisWeekSunday.setDate(thisWeekMonday.getDate() + 6);
+  thisWeekSunday.setHours(23, 59, 59, 999);
+
+  // Monday of last week
+  const lastWeekMonday = new Date(thisWeekMonday);
+  lastWeekMonday.setDate(thisWeekMonday.getDate() - 7);
+  lastWeekMonday.setHours(0, 0, 0, 0);
+
+  // Sunday of last week
+  const lastWeekSunday = new Date(thisWeekMonday);
+  lastWeekSunday.setDate(thisWeekMonday.getDate() - 1);
+  lastWeekSunday.setHours(23, 59, 59, 999);
+
+  // Last 3 days (today and prior 2 days)
+  const threeDaysStart = new Date(refDate);
+  threeDaysStart.setDate(refDate.getDate() - 2);
+  threeDaysStart.setHours(0, 0, 0, 0);
+
+  const refDateEnd = new Date(refDate);
+  refDateEnd.setHours(23, 59, 59, 999);
+
+  // This month
+  const thisMonthStart = new Date(refDate.getFullYear(), refDate.getMonth(), 1, 0, 0, 0, 0);
+  const thisMonthEnd = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  // Last month
+  const lastMonthStart = new Date(refDate.getFullYear(), refDate.getMonth() - 1, 1, 0, 0, 0, 0);
+  const lastMonthEnd = new Date(refDate.getFullYear(), refDate.getMonth(), 0, 23, 59, 59, 999);
 
   switch (filter) {
-    case '3days':
-      return diffDays <= 3;
+    case 'thisWeek':
+      return targetDate >= thisWeekMonday && targetDate <= thisWeekSunday;
+    case 'lastWeek':
     case '1week':
-      return diffDays <= 7;
+      return targetDate >= lastWeekMonday && targetDate <= lastWeekSunday;
+    case '3days':
+      return targetDate >= threeDaysStart && targetDate <= refDateEnd;
+    case 'thisMonth':
     case '1month':
-      return diffDays <= 30;
+      return targetDate >= thisMonthStart && targetDate <= thisMonthEnd;
+    case 'lastMonth':
+      return targetDate >= lastMonthStart && targetDate <= lastMonthEnd;
     default:
       return true;
   }
 }
 
-export function getDateFilterRangeLabel(filter: TimeFilter): string {
+export interface FilterRangeDetails {
+  title: string;
+  subtitle: string;
+  fullLabel: string;
+}
+
+export function getDateFilterRangeDetails(filter: TimeFilter, referenceDateStr?: string): FilterRangeDetails {
+  const refDate = referenceDateStr
+    ? new Date(Number(referenceDateStr.split('-')[0]), Number(referenceDateStr.split('-')[1]) - 1, Number(referenceDateStr.split('-')[2]))
+    : new Date();
+
+  const refDayOfWeek = refDate.getDay();
+  const diffToMonday = refDayOfWeek === 0 ? -6 : 1 - refDayOfWeek;
+
+  const thisWeekMonday = new Date(refDate);
+  thisWeekMonday.setDate(refDate.getDate() + diffToMonday);
+
+  const thisWeekSunday = new Date(thisWeekMonday);
+  thisWeekSunday.setDate(thisWeekMonday.getDate() + 6);
+
+  const lastWeekMonday = new Date(thisWeekMonday);
+  lastWeekMonday.setDate(thisWeekMonday.getDate() - 7);
+
+  const lastWeekSunday = new Date(thisWeekMonday);
+  lastWeekSunday.setDate(thisWeekMonday.getDate() - 1);
+
+  const threeDaysStart = new Date(refDate);
+  threeDaysStart.setDate(refDate.getDate() - 2);
+
+  const formatShort = (d: Date) =>
+    d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  const formatMonth = (d: Date) =>
+    d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
   switch (filter) {
-    case '3days':
-      return 'Last 3 Days';
-    case '1week':
-      return 'Last Week';
-    case '1month':
-      return 'Last Month';
+    case 'thisWeek': {
+      const range = `${formatShort(thisWeekMonday)} – ${formatShort(thisWeekSunday)}`;
+      return { title: 'This Week', subtitle: range, fullLabel: `This Week (${range})` };
+    }
+    case 'lastWeek':
+    case '1week': {
+      const range = `${formatShort(lastWeekMonday)} – ${formatShort(lastWeekSunday)}`;
+      return { title: 'Last Week', subtitle: range, fullLabel: `Last Week (${range})` };
+    }
+    case '3days': {
+      const range = `${formatShort(threeDaysStart)} – ${formatShort(refDate)}`;
+      return { title: 'Last 3 Days', subtitle: range, fullLabel: `Last 3 Days (${range})` };
+    }
+    case 'thisMonth':
+    case '1month': {
+      const range = formatMonth(refDate);
+      return { title: 'This Month', subtitle: range, fullLabel: `This Month (${range})` };
+    }
+    case 'lastMonth': {
+      const lastMonthDate = new Date(refDate.getFullYear(), refDate.getMonth() - 1, 1);
+      const range = formatMonth(lastMonthDate);
+      return { title: 'Last Month', subtitle: range, fullLabel: `Last Month (${range})` };
+    }
     case 'all':
-      return 'All Time';
+    default:
+      return { title: 'All Time', subtitle: 'All recorded workouts', fullLabel: 'All Time (All History)' };
   }
+}
+
+export function getDateFilterRangeLabel(filter: TimeFilter): string {
+  return getDateFilterRangeDetails(filter).fullLabel;
 }
 
 export function calculatePace(

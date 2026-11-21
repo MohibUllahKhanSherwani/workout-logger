@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,12 @@ import {
   TextInput,
   Alert,
   Platform,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useWorkout } from '@/context/WorkoutContext';
 import { DatePickerBar } from '@/components/DatePickerBar';
 import { ExercisePickerModal } from '@/components/ExercisePickerModal';
@@ -30,6 +33,26 @@ export default function DailyWorkoutScreen() {
   } = useWorkout();
 
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardHeight(0);
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleSelectCategory = (category: CategoryItem) => {
     addCategoryToWorkout(category);
@@ -68,58 +91,80 @@ export default function DailyWorkoutScreen() {
           <Text style={styles.appSubtitle}>Daily Log</Text>
         </View>
 
-        <TouchableOpacity onPress={handleToggleUnit} style={styles.unitBtn}>
-          <Text style={styles.unitBtnText}>{preferredUnit.toUpperCase()}</Text>
-        </TouchableOpacity>
+        <View style={styles.topHeaderRight}>
+          <TouchableOpacity
+            onPress={() => router.push('/report')}
+            style={styles.reportBtn}
+          >
+            <Ionicons name="document-text-outline" size={15} color="#0284c7" />
+            <Text style={styles.reportBtnText}>Reports</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={handleToggleUnit} style={styles.unitBtn}>
+            <Text style={styles.unitBtnText}>{preferredUnit.toUpperCase()}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Date Navigation Bar */}
       <DatePickerBar />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Optional Title */}
-        <TextInput
-          style={styles.titleInput}
-          placeholder="Workout Title (optional, e.g. Chest Day, Morning Run)..."
-          placeholderTextColor="#94a3b8"
-          value={currentWorkout.title || ''}
-          onChangeText={updateTitle}
-        />
-
-        {/* Strength Exercises */}
-        {exercises.map((ex) => (
-          <ExerciseCard key={ex.id} exercise={ex} />
-        ))}
-
-        {/* Runs */}
-        {runs.map((r) => (
-          <RunCard key={r.id} run={r} />
-        ))}
-
-        {/* Add Category / Exercise Button */}
-        <TouchableOpacity
-          style={styles.addCategoryBtn}
-          onPress={() => setPickerVisible(true)}
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 80 : 50 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
-          <Ionicons name="add-circle" size={20} color="#ffffff" />
-          <Text style={styles.addCategoryBtnText}>+ Add Category / Exercise</Text>
-        </TouchableOpacity>
+          {/* Optional Title */}
+          <TextInput
+            style={styles.titleInput}
+            placeholder="Workout Title (optional, e.g. Chest Day, Morning Run)..."
+            placeholderTextColor="#94a3b8"
+            value={currentWorkout.title || ''}
+            onChangeText={updateTitle}
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
 
-        {/* Clear Log Button */}
-        {hasContent && (
+          {/* Strength Exercises */}
+          {exercises.map((ex) => (
+            <ExerciseCard key={ex.id} exercise={ex} />
+          ))}
+
+          {/* Runs */}
+          {runs.map((r) => (
+            <RunCard key={r.id} run={r} />
+          ))}
+
+          {/* Add Category / Exercise Button */}
           <TouchableOpacity
-            style={styles.deleteWorkoutBtn}
-            onPress={confirmDeleteWorkout}
+            style={styles.addCategoryBtn}
+            onPress={() => setPickerVisible(true)}
           >
-            <Ionicons name="trash-outline" size={16} color="#ef4444" />
-            <Text style={styles.deleteWorkoutText}>Clear This Day&apos;s Log</Text>
+            <Ionicons name="add-circle" size={20} color="#ffffff" />
+            <Text style={styles.addCategoryBtnText}>+ Add Category / Exercise</Text>
           </TouchableOpacity>
-        )}
-      </ScrollView>
+
+          {/* Clear Log Button */}
+          {hasContent && (
+            <TouchableOpacity
+              style={styles.deleteWorkoutBtn}
+              onPress={confirmDeleteWorkout}
+            >
+              <Ionicons name="trash-outline" size={16} color="#ef4444" />
+              <Text style={styles.deleteWorkoutText}>Clear This Day&apos;s Log</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Select Category Modal */}
       <ExercisePickerModal
@@ -145,6 +190,27 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
+  topHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  reportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+  },
+  reportBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284c7',
+  },
   appTitle: {
     fontSize: 20,
     fontWeight: '800',
@@ -167,6 +233,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#334155',
+  },
+  keyboardContainer: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,

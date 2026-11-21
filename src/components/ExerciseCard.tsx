@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LoggedStrengthExercise, WorkoutSet } from '@/types/workout';
@@ -121,6 +122,9 @@ export const ExerciseCard: React.FC<Props> = ({ exercise }) => {
             <TextInput
               style={[styles.numericInput, set.completed && styles.inputCompleted]}
               keyboardType="numeric"
+              selectTextOnFocus
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
               defaultValue={set.weight ? String(set.weight) : ''}
               placeholder="0"
               placeholderTextColor="#94a3b8"
@@ -136,6 +140,9 @@ export const ExerciseCard: React.FC<Props> = ({ exercise }) => {
             <TextInput
               style={[styles.numericInput, set.completed && styles.inputCompleted]}
               keyboardType="numeric"
+              selectTextOnFocus
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
               defaultValue={set.reps ? String(set.reps) : ''}
               placeholder="0"
               placeholderTextColor="#94a3b8"

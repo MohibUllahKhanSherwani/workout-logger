@@ -10,6 +10,7 @@ export default function RootLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
+          tabBarHideOnKeyboard: true,
           tabBarActiveTintColor: '#0284c7',
           tabBarInactiveTintColor: '#94a3b8',
           tabBarStyle: {
@@ -55,10 +56,10 @@ export default function RootLayout() {
         <Tabs.Screen
           name="report"
           options={{
-            title: 'AI Report',
+            title: 'Reports',
             tabBarIcon: ({ color, focused }) => (
               <Ionicons
-                name={focused ? 'sparkles' : 'sparkles-outline'}
+                name={focused ? 'document-text' : 'document-text-outline'}
                 size={22}
                 color={color as string}
               />

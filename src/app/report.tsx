@@ -22,35 +22,107 @@ import {
   shareToWhatsApp,
   exportPdfReport,
   exportTextFileReport,
+  shareReportSheet,
 } from '@/utils/report-generator';
-import { getDateFilterRangeLabel } from '@/utils/date-helpers';
+import { getDateFilterRangeDetails } from '@/utils/date-helpers';
 
-const FILTERS: { key: TimeFilter; label: string }[] = [
+interface FilterOption {
+  key: TimeFilter;
+  label: string;
+}
+
+const FILTERS: FilterOption[] = [
+  { key: 'thisWeek', label: 'This Week' },
+  { key: 'lastWeek', label: 'Last Week' },
   { key: '3days', label: 'Last 3 Days' },
-  { key: '1week', label: 'Last Week' },
-  { key: '1month', label: 'Last Month' },
+  { key: 'thisMonth', label: 'This Month' },
+  { key: 'lastMonth', label: 'Last Month' },
   { key: 'all', label: 'All Time' },
 ];
 
 export default function ReportScreen() {
-  const { workouts, preferredUnit } = useWorkout();
-  const [filter, setFilter] = useState<TimeFilter>('1week');
+  const { workouts, preferredUnit, exportBackup } = useWorkout();
+  const [filter, setFilter] = useState<TimeFilter>('thisWeek');
+  const [previewTab, setPreviewTab] = useState<'ai' | 'clean'>('ai');
   const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [copiedNotification, setCopiedNotification] = useState<boolean>(false);
+  const [copiedNotification, setCopiedNotification] = useState<string | null>(null);
 
   const filteredWorkouts = useMemo(() => {
     return filterWorkouts(workouts, filter);
   }, [workouts, filter]);
 
-  const stats = useMemo(() => computeStats(filteredWorkouts), [filteredWorkouts]);
+  const stats = useMemo(
+    () => computeStats(filteredWorkouts, preferredUnit),
+    [filteredWorkouts, preferredUnit]
+  );
+
+  const rangeDetails = useMemo(() => {
+    return getDateFilterRangeDetails(filter);
+  }, [filter]);
 
   const aiReportText = useMemo(() => {
-    return buildAIPromptReport(filteredWorkouts, filter);
-  }, [filteredWorkouts, filter]);
+    return buildAIPromptReport(filteredWorkouts, filter, preferredUnit);
+  }, [filteredWorkouts, filter, preferredUnit]);
 
   const whatsAppText = useMemo(() => {
-    return buildWhatsAppReport(filteredWorkouts, filter);
-  }, [filteredWorkouts, filter]);
+    return buildWhatsAppReport(filteredWorkouts, filter, preferredUnit);
+  }, [filteredWorkouts, filter, preferredUnit]);
+
+  const showToast = (msg: string) => {
+    setCopiedNotification(msg);
+    setTimeout(() => setCopiedNotification(null), 3000);
+  };
+
+  const handleCopyForAI = async () => {
+    try {
+      await Clipboard.setStringAsync(aiReportText);
+      showToast('Copied! Paste directly into ChatGPT, Claude, or your AI coach.');
+    } catch {
+      Alert.alert('Copy Error', 'Failed to copy to clipboard.');
+    }
+  };
+
+  const handleCopyCleanText = async () => {
+    try {
+      await Clipboard.setStringAsync(whatsAppText);
+      showToast('Copied text report to clipboard!');
+    } catch {
+      Alert.alert('Copy Error', 'Failed to copy to clipboard.');
+    }
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      setIsExporting(true);
+      await exportPdfReport(filteredWorkouts, filter, preferredUnit);
+    } catch {
+      Alert.alert('Export Error', 'Failed to create and share PDF report.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportTextFile = async () => {
+    try {
+      setIsExporting(true);
+      await exportTextFileReport(filteredWorkouts, filter, preferredUnit);
+    } catch {
+      Alert.alert('Export Error', 'Failed to export text file.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleShareSheet = async () => {
+    try {
+      setIsExporting(true);
+      await shareReportSheet(aiReportText, `Workout Report - ${rangeDetails.title}`);
+    } catch {
+      Alert.alert('Share Error', 'Failed to open share sheet.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const handleShareWhatsApp = async () => {
     try {
@@ -63,33 +135,13 @@ export default function ReportScreen() {
     }
   };
 
-  const handleCopyForAI = async () => {
-    try {
-      await Clipboard.setStringAsync(aiReportText);
-      setCopiedNotification(true);
-      setTimeout(() => setCopiedNotification(false), 2500);
-    } catch {
-      Alert.alert('Copy Error', 'Failed to copy to clipboard.');
-    }
-  };
-
-  const handleExportPdf = async () => {
+  const handleExportFullBackup = async () => {
     try {
       setIsExporting(true);
-      await exportPdfReport(filteredWorkouts, filter);
+      await exportBackup();
+      showToast('Workout backup exported! Save it to Google Drive or Files.');
     } catch {
-      Alert.alert('Export Error', 'Failed to create and share PDF report.');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportTextFile = async () => {
-    try {
-      setIsExporting(true);
-      await exportTextFileReport(filteredWorkouts, filter);
-    } catch {
-      Alert.alert('Export Error', 'Failed to export text file.');
+      Alert.alert('Backup Error', 'Failed to export workout backup.');
     } finally {
       setIsExporting(false);
     }
@@ -97,129 +149,238 @@ export default function ReportScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* Header */}
+      {/* Top Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>View & Share Report</Text>
+        <View style={styles.headerTextGroup}>
+          <Text style={styles.headerTitle}>Workout Reports</Text>
           <Text style={styles.headerSubtitle}>
-            Share with your AI agent on WhatsApp
+            Generate PDF, text, & ChatGPT coaching prompts
           </Text>
         </View>
+
+        <TouchableOpacity
+          style={styles.headerBackupBtn}
+          onPress={handleExportFullBackup}
+          disabled={isExporting}
+        >
+          <Ionicons name="cloud-download-outline" size={16} color="#0284c7" />
+          <Text style={styles.headerBackupText}>Backup</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Filter Tabs: Last 3 Days, Last Week, Last Month, All Time */}
-      <View style={styles.filtersContainer}>
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterTab, filter === f.key && styles.filterTabActive]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filter === f.key && styles.filterTabTextActive,
-              ]}
-            >
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Filter Tabs Bar (Horizontal Scrollable) */}
+      <View style={styles.filterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}
+        >
+          {FILTERS.map((f) => {
+            const isActive = filter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                onPress={() => setFilter(f.key)}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isActive && styles.filterChipTextActive,
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
-      {/* Copied Toast */}
+      {/* Range Date Badge Banner */}
+      <View style={styles.rangeBanner}>
+        <Ionicons name="calendar-outline" size={14} color="#0284c7" />
+        <Text style={styles.rangeText}>
+          Period: <Text style={styles.rangeBold}>{rangeDetails.title}</Text> ({rangeDetails.subtitle})
+        </Text>
+      </View>
+
+      {/* Copied Notification Toast */}
       {copiedNotification && (
         <View style={styles.toast}>
-          <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
-          <Text style={styles.toastText}>
-            Copied! Ready to paste into WhatsApp / AI Agent.
-          </Text>
+          <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
+          <Text style={styles.toastText}>{copiedNotification}</Text>
         </View>
       )}
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator
       >
-        {/* Quick Stats Summary */}
+        {/* Quick Stats Grid */}
         <View style={styles.statsRow}>
-          <View style={styles.statChip}>
-            <Text style={styles.statChipVal}>{stats.totalWorkouts}</Text>
-            <Text style={styles.statChipLabel}>Workouts</Text>
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>{stats.totalWorkouts}</Text>
+            <Text style={styles.statLabel}>Sessions</Text>
           </View>
-          <View style={styles.statChip}>
-            <Text style={styles.statChipVal}>
-              {stats.totalVolumeKg.toLocaleString()} {preferredUnit}
+
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>
+              {stats.totalVolumeKg.toLocaleString()}
             </Text>
-            <Text style={styles.statChipLabel}>Volume</Text>
+            <Text style={styles.statLabel}>Volume ({preferredUnit})</Text>
           </View>
-          <View style={styles.statChip}>
-            <Text style={styles.statChipVal}>{stats.totalSets}</Text>
-            <Text style={styles.statChipLabel}>Sets</Text>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>{stats.totalSets}</Text>
+            <Text style={styles.statLabel}>Total Sets</Text>
           </View>
-          <View style={styles.statChip}>
-            <Text style={styles.statChipVal}>{stats.totalRunDistanceKm} km</Text>
-            <Text style={styles.statChipLabel}>Running</Text>
+
+          <View style={styles.statCard}>
+            <Text style={styles.statVal}>
+              {stats.totalRunDistanceKm > 0 ? `${stats.totalRunDistanceKm}k` : '0'}
+            </Text>
+            <Text style={styles.statLabel}>Run (km)</Text>
           </View>
         </View>
 
-        {/* Action Buttons */}
+        {/* Primary Export Actions Card */}
         <View style={styles.actionsCard}>
-          {/* Share to WhatsApp */}
-          <TouchableOpacity
-            style={styles.whatsAppBtn}
-            onPress={handleShareWhatsApp}
-            disabled={isExporting}
-          >
-            {isExporting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <Ionicons name="logo-whatsapp" size={20} color="#ffffff" />
-                <Text style={styles.whatsAppBtnText}>Share to WhatsApp</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <Text style={styles.actionsCardTitle}>EXPORT & SHARE OPTIONS</Text>
 
-          {/* Copy Prompt for AI Agent */}
+          {/* Copy for ChatGPT / AI Agent (Highlighted primary button) */}
           <TouchableOpacity
-            style={styles.copyBtn}
+            style={styles.primaryAgentBtn}
             onPress={handleCopyForAI}
             disabled={isExporting}
           >
-            <Ionicons name="copy-outline" size={18} color="#0284c7" />
-            <Text style={styles.copyBtnText}>Copy Prompt for AI Agent</Text>
+            <View style={styles.btnIconCircle}>
+              <Ionicons name="sparkles" size={18} color="#ffffff" />
+            </View>
+            <View style={styles.btnTextGroup}>
+              <Text style={styles.primaryBtnTitle}>Copy Prompt for ChatGPT / Agent</Text>
+              <Text style={styles.primaryBtnSub}>
+                Formatted with coaching prompt & progressive overload tables
+              </Text>
+            </View>
+            <Ionicons name="copy-outline" size={18} color="#ffffff" />
           </TouchableOpacity>
 
-          {/* Secondary PDF & TXT */}
-          <View style={styles.secondaryExportRow}>
+          {/* Export PDF Button */}
+          <TouchableOpacity
+            style={styles.pdfBtn}
+            onPress={handleExportPdf}
+            disabled={isExporting}
+          >
+            <View style={[styles.btnIconCircle, { backgroundColor: '#ef4444' }]}>
+              <Ionicons name="document-text" size={18} color="#ffffff" />
+            </View>
+            <View style={styles.btnTextGroup}>
+              <Text style={styles.pdfBtnTitle}>Generate & Share PDF Report</Text>
+              <Text style={styles.pdfBtnSub}>
+                Crisp tables, session breakdowns, & performance summary
+              </Text>
+            </View>
+            <Ionicons name="share-outline" size={18} color="#0f172a" />
+          </TouchableOpacity>
+
+          {/* Secondary Action Grid: Share App, Export .txt, WhatsApp */}
+          <View style={styles.secondaryGrid}>
             <TouchableOpacity
-              style={styles.fileExportBtn}
-              onPress={handleExportPdf}
+              style={styles.secondaryBtn}
+              onPress={handleShareSheet}
               disabled={isExporting}
             >
-              <Ionicons name="document-text-outline" size={16} color="#475569" />
-              <Text style={styles.fileExportBtnText}>Export PDF</Text>
+              <Ionicons name="share-social-outline" size={16} color="#0284c7" />
+              <Text style={styles.secondaryBtnText}>Share via App...</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.fileExportBtn}
+              style={styles.secondaryBtn}
               onPress={handleExportTextFile}
               disabled={isExporting}
             >
               <Ionicons name="document-outline" size={16} color="#475569" />
-              <Text style={styles.fileExportBtnText}>Export .txt File</Text>
+              <Text style={styles.secondaryBtnText}>Save .txt File</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryBtn, styles.whatsappBtnStyle]}
+              onPress={handleShareWhatsApp}
+              disabled={isExporting}
+            >
+              <Ionicons name="logo-whatsapp" size={16} color="#16a34a" />
+              <Text style={[styles.secondaryBtnText, { color: '#16a34a' }]}>WhatsApp</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Live Preview */}
+        {/* Data Persistence / Backup Card */}
+        <View style={styles.backupCard}>
+          <View style={styles.backupHeader}>
+            <Ionicons name="shield-checkmark" size={18} color="#059669" />
+            <Text style={styles.backupTitle}>Reinstall & Data Protection</Text>
+          </View>
+          <Text style={styles.backupDesc}>
+            Backups keep your workout history 100% safe if you reinstall the app or switch devices. Export a backup anytime to save on Google Drive, Files, or WhatsApp.
+          </Text>
+          <TouchableOpacity
+            style={styles.backupActionBtn}
+            onPress={handleExportFullBackup}
+            disabled={isExporting}
+          >
+            <Ionicons name="download-outline" size={16} color="#059669" />
+            <Text style={styles.backupActionText}>Export Full Workout Backup (.json)</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Live Preview Card */}
         <View style={styles.previewContainer}>
-          <View style={styles.previewHeader}>
-            <Text style={styles.previewTitle}>Report Preview</Text>
-            <Text style={styles.previewBadge}>
-              {getDateFilterRangeLabel(filter)}
-            </Text>
+          <View style={styles.previewHeaderRow}>
+            <View style={styles.previewTabs}>
+              <TouchableOpacity
+                style={[
+                  styles.previewTabItem,
+                  previewTab === 'ai' && styles.previewTabItemActive,
+                ]}
+                onPress={() => setPreviewTab('ai')}
+              >
+                <Text
+                  style={[
+                    styles.previewTabItemText,
+                    previewTab === 'ai' && styles.previewTabItemTextActive,
+                  ]}
+                >
+                  AI Prompt Preview
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.previewTabItem,
+                  previewTab === 'clean' && styles.previewTabItemActive,
+                ]}
+                onPress={() => setPreviewTab('clean')}
+              >
+                <Text
+                  style={[
+                    styles.previewTabItemText,
+                    previewTab === 'clean' && styles.previewTabItemTextActive,
+                  ]}
+                >
+                  Clean Text
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.previewCopyBtn}
+              onPress={previewTab === 'ai' ? handleCopyForAI : handleCopyCleanText}
+            >
+              <Ionicons name="copy-outline" size={14} color="#0284c7" />
+              <Text style={styles.previewCopyText}>Copy</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.codeBox}>
@@ -228,11 +389,21 @@ export default function ReportScreen() {
               style={styles.previewScroll}
               showsVerticalScrollIndicator
             >
-              <Text style={styles.codeText}>{aiReportText}</Text>
+              <Text style={styles.codeText}>
+                {previewTab === 'ai' ? aiReportText : whatsAppText}
+              </Text>
             </ScrollView>
           </View>
         </View>
       </ScrollView>
+
+      {/* Loading Overlay */}
+      {isExporting && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#0284c7" />
+          <Text style={styles.loadingText}>Generating report...</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -243,10 +414,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
+  },
+  headerTextGroup: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 20,
@@ -257,33 +434,77 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     fontWeight: '500',
+    marginTop: 2,
   },
-  filtersContainer: {
+  headerBackupBtn: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    marginHorizontal: 16,
-    marginVertical: 10,
-    borderRadius: 8,
-    padding: 3,
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 7,
     alignItems: 'center',
-    borderRadius: 6,
+    gap: 4,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  filterTabActive: {
+  headerBackupText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0284c7',
+  },
+  filterWrapper: {
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingVertical: 8,
+  },
+  filterScroll: {
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
     backgroundColor: '#ffffff',
-    elevation: 1,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  filterTabText: {
-    fontSize: 11,
+  filterChipActive: {
+    backgroundColor: '#0284c7',
+    borderColor: '#0284c7',
+    elevation: 2,
+    shadowColor: '#0284c7',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  filterChipText: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748b',
   },
-  filterTabTextActive: {
-    color: '#0284c7',
+  filterChipTextActive: {
+    color: '#ffffff',
     fontWeight: '700',
+  },
+  rangeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#f0f9ff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0f2fe',
+  },
+  rangeText: {
+    fontSize: 12,
+    color: '#0369a1',
+  },
+  rangeBold: {
+    fontWeight: '700',
+    color: '#0284c7',
   },
   toast: {
     flexDirection: 'row',
@@ -291,10 +512,10 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#16a34a',
     marginHorizontal: 16,
-    marginBottom: 8,
+    marginTop: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   toastText: {
     fontSize: 12,
@@ -309,91 +530,162 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
     paddingBottom: 40,
+    gap: 14,
   },
   statsRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
   },
-  statChip: {
+  statCard: {
     flex: 1,
     backgroundColor: '#ffffff',
-    borderRadius: 8,
-    paddingVertical: 8,
+    borderRadius: 10,
+    paddingVertical: 10,
     paddingHorizontal: 4,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  statChipVal: {
-    fontSize: 14,
+  statVal: {
+    fontSize: 15,
     fontWeight: '800',
     color: '#0f172a',
   },
-  statChipLabel: {
+  statLabel: {
     fontSize: 10,
     color: '#64748b',
     fontWeight: '600',
     textTransform: 'uppercase',
     marginTop: 2,
+    textAlign: 'center',
   },
   actionsCard: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
     padding: 14,
-    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
+    gap: 12,
+  },
+  actionsCardTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.5,
+  },
+  primaryAgentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0284c7',
+    padding: 12,
+    borderRadius: 10,
     gap: 10,
   },
-  whatsAppBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  btnIconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#25D366',
-    paddingVertical: 12,
-    borderRadius: 8,
+    alignItems: 'center',
   },
-  whatsAppBtnText: {
+  btnTextGroup: {
+    flex: 1,
+  },
+  primaryBtnTitle: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
   },
-  copyBtn: {
+  primaryBtnSub: {
+    color: '#e0f2fe',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  pdfBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#f0f9ff',
+    backgroundColor: '#f8fafc',
     borderWidth: 1,
-    borderColor: '#0284c7',
-    paddingVertical: 10,
-    borderRadius: 8,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    borderRadius: 10,
+    gap: 10,
   },
-  copyBtnText: {
-    color: '#0284c7',
-    fontSize: 13,
-    fontWeight: '700',
+  pdfBtnTitle: {
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
   },
-  secondaryExportRow: {
+  pdfBtnSub: {
+    color: '#64748b',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  secondaryGrid: {
     flexDirection: 'row',
     gap: 8,
   },
-  fileExportBtn: {
+  secondaryBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 4,
     backgroundColor: '#f1f5f9',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+  },
+  whatsappBtnStyle: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  secondaryBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  backupCard: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 12,
+    padding: 14,
+  },
+  backupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  backupTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#065f46',
+  },
+  backupDesc: {
+    fontSize: 11,
+    color: '#047857',
+    lineHeight: 16,
+    marginBottom: 10,
+  },
+  backupActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#6ee7b7',
     paddingVertical: 8,
     borderRadius: 6,
   },
-  fileExportBtnText: {
+  backupActionText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
+    fontWeight: '700',
+    color: '#047857',
   },
   previewContainer: {
     backgroundColor: '#ffffff',
@@ -402,40 +694,76 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
   },
-  previewHeader: {
+  previewHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  previewTitle: {
-    fontSize: 12,
+  previewTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 6,
+    padding: 2,
+    gap: 4,
+  },
+  previewTabItem: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  previewTabItemActive: {
+    backgroundColor: '#ffffff',
+    elevation: 1,
+  },
+  previewTabItemText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  previewTabItemTextActive: {
+    color: '#0284c7',
     fontWeight: '700',
-    color: '#475569',
-    textTransform: 'uppercase',
   },
-  previewBadge: {
+  previewCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+  },
+  previewCopyText: {
     fontSize: 11,
     color: '#0284c7',
-    backgroundColor: '#e0f2fe',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   codeBox: {
     backgroundColor: '#0f172a',
-    borderRadius: 6,
-    padding: 10,
-    maxHeight: 250,
+    borderRadius: 8,
+    padding: 12,
+    maxHeight: 280,
   },
   previewScroll: {
-    maxHeight: 230,
+    maxHeight: 256,
   },
   codeText: {
     fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
     fontSize: 11,
     color: '#e2e8f0',
     lineHeight: 16,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0f172a',
   },
 });

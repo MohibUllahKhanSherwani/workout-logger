@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import {
+  BackupData,
   CategoryItem,
   DailyWorkout,
   WeightUnit,
@@ -142,4 +145,104 @@ export async function getLastExercisePerformance(
     }
   }
   return null;
+}
+
+/**
+ * Creates a full portable JSON backup payload of all workouts, categories, and settings.
+ */
+export async function createBackupPayload(): Promise<BackupData> {
+  const workouts = await getStoredWorkouts();
+  const categories = await getStoredCategories();
+  const preferredUnit = await getPreferredWeightUnit();
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    workouts,
+    categories,
+    preferredUnit,
+  };
+}
+
+/**
+ * Exports all data to a .json file and opens the native share dialog (to save in Files, Google Drive, WhatsApp, etc.).
+ */
+export async function exportBackupFile(): Promise<string | null> {
+  try {
+    const backup = await createBackupPayload();
+    const jsonStr = JSON.stringify(backup, null, 2);
+    const dateTag = new Date().toISOString().slice(0, 10);
+    const fileUri = `${FileSystem.cacheDirectory || ''}workout-logger-backup-${dateTag}.json`;
+
+    if (FileSystem.cacheDirectory) {
+      await FileSystem.writeAsStringAsync(fileUri, jsonStr, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          UTI: 'public.json',
+          mimeType: 'application/json',
+          dialogTitle: 'Export Workout Logger Backup',
+        });
+      }
+      return fileUri;
+    }
+    return null;
+  } catch (error) {
+    console.error('Failed to export backup file:', error);
+    throw error;
+  }
+}
+
+/**
+ * Restores workouts and categories from a BackupData object.
+ */
+export async function restoreFromBackup(
+  backup: BackupData
+): Promise<{ workoutCount: number; categoryCount: number }> {
+  if (!backup || !Array.isArray(backup.workouts)) {
+    throw new Error('Invalid backup format: missing workouts list');
+  }
+
+  // Merge workouts by date
+  const currentWorkouts = await getStoredWorkouts();
+  const workoutMap = new Map<string, DailyWorkout>();
+  for (const w of currentWorkouts) {
+    workoutMap.set(w.date, w);
+  }
+  for (const w of backup.workouts) {
+    workoutMap.set(w.date, w);
+  }
+  const mergedWorkouts = Array.from(workoutMap.values()).sort((a, b) =>
+    b.date.localeCompare(a.date)
+  );
+  await AsyncStorage.setItem(
+    STORAGE_KEYS.WORKOUTS,
+    JSON.stringify(mergedWorkouts)
+  );
+
+  // Merge categories
+  if (Array.isArray(backup.categories)) {
+    const currentCats = await getStoredCategories();
+    const catMap = new Map<string, CategoryItem>();
+    for (const c of currentCats) {
+      catMap.set(c.id, c);
+    }
+    for (const c of backup.categories) {
+      catMap.set(c.id, c);
+    }
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.CATEGORIES,
+      JSON.stringify(Array.from(catMap.values()))
+    );
+  }
+
+  if (backup.preferredUnit) {
+    await setPreferredWeightUnit(backup.preferredUnit);
+  }
+
+  return {
+    workoutCount: mergedWorkouts.length,
+    categoryCount: (backup.categories || []).length,
+  };
 }

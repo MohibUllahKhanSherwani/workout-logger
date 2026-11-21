@@ -15,22 +15,27 @@ import { filterWorkouts, computeStats } from '@/utils/report-generator';
 import { formatDisplayDate, getDateFilterRangeLabel } from '@/utils/date-helpers';
 
 const FILTERS: { key: TimeFilter; label: string }[] = [
+  { key: 'thisWeek', label: 'This Week' },
+  { key: 'lastWeek', label: 'Last Week' },
   { key: '3days', label: 'Last 3 Days' },
-  { key: '1week', label: 'Last Week' },
-  { key: '1month', label: 'Last Month' },
+  { key: 'thisMonth', label: 'This Month' },
+  { key: 'lastMonth', label: 'Last Month' },
   { key: 'all', label: 'All Time' },
 ];
 
 export default function HistoryScreen() {
   const { workouts, setActiveDate, preferredUnit } = useWorkout();
-  const [filter, setFilter] = useState<TimeFilter>('1month');
+  const [filter, setFilter] = useState<TimeFilter>('thisWeek');
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
 
   const filteredWorkouts = useMemo(() => {
     return filterWorkouts(workouts, filter);
   }, [workouts, filter]);
 
-  const stats = useMemo(() => computeStats(filteredWorkouts), [filteredWorkouts]);
+  const stats = useMemo(
+    () => computeStats(filteredWorkouts, preferredUnit),
+    [filteredWorkouts, preferredUnit]
+  );
 
   const toggleExpand = (date: string) => {
     setExpandedDates((prev) => ({ ...prev, [date]: !prev[date] }));
@@ -61,24 +66,30 @@ export default function HistoryScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Filter Tabs: Last 3 Days, Last Week, Last Month, All Time */}
-      <View style={styles.filtersContainer}>
-        {FILTERS.map((f) => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterTab, filter === f.key && styles.filterTabActive]}
-            onPress={() => setFilter(f.key)}
-          >
-            <Text
-              style={[
-                styles.filterTabText,
-                filter === f.key && styles.filterTabTextActive,
-              ]}
+      {/* Filter Tabs Bar (Horizontal Scrollable) */}
+      <View style={styles.filtersWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScroll}
+        >
+          {FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
+              onPress={() => setFilter(f.key)}
             >
-              {f.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={[
+                  styles.filterChipText,
+                  filter === f.key && styles.filterChipTextActive,
+                ]}
+              >
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       <ScrollView
@@ -241,31 +252,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-  filtersContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    marginHorizontal: 16,
-    marginVertical: 10,
-    borderRadius: 8,
-    padding: 3,
+  filtersWrapper: {
+    backgroundColor: '#f8fafc',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    paddingVertical: 8,
   },
-  filterTab: {
-    flex: 1,
+  filtersScroll: {
+    paddingHorizontal: 14,
+    gap: 8,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
     paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  filterTabActive: {
+    borderRadius: 20,
     backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  filterChipActive: {
+    backgroundColor: '#0284c7',
+    borderColor: '#0284c7',
     elevation: 1,
   },
-  filterTabText: {
-    fontSize: 11,
+  filterChipText: {
+    fontSize: 12,
     fontWeight: '600',
     color: '#64748b',
   },
-  filterTabTextActive: {
-    color: '#0284c7',
+  filterChipTextActive: {
+    color: '#ffffff',
     fontWeight: '700',
   },
   scrollView: {

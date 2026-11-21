@@ -49,7 +49,23 @@ export interface DailyWorkout {
   updatedAt: number;
 }
 
-export type TimeFilter = '3days' | '1week' | '1month' | 'all';
+export type TimeFilter =
+  | 'thisWeek'
+  | 'lastWeek'
+  | '3days'
+  | 'thisMonth'
+  | 'lastMonth'
+  | 'all'
+  | '1week'
+  | '1month';
+
+export interface BackupData {
+  version: number;
+  exportedAt: string;
+  workouts: DailyWorkout[];
+  categories: CategoryItem[];
+  preferredUnit: WeightUnit;
+}
 
 export interface WorkoutFilterStats {
   totalWorkouts: number;

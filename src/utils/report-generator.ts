@@ -5,11 +5,13 @@ import { Linking, Platform, Share } from 'react-native';
 import {
   DailyWorkout,
   TimeFilter,
+  WeightUnit,
   WorkoutFilterStats,
 } from '@/types/workout';
 import {
   calculatePace,
   formatDisplayDate,
+  getDateFilterRangeDetails,
   getDateFilterRangeLabel,
   isDateInFilter,
 } from '@/utils/date-helpers';
@@ -21,10 +23,13 @@ export function filterWorkouts(
   return workouts.filter((w) => isDateInFilter(w.date, filter));
 }
 
-export function computeStats(workouts: DailyWorkout[]): WorkoutFilterStats {
+export function computeStats(
+  workouts: DailyWorkout[],
+  preferredUnit: WeightUnit = 'kg'
+): WorkoutFilterStats {
   let totalSets = 0;
   let totalReps = 0;
-  let totalVolumeKg = 0;
+  let totalVolume = 0;
   let totalRunDistanceKm = 0;
   let totalRunDurationSeconds = 0;
 
@@ -39,10 +44,19 @@ export function computeStats(workouts: DailyWorkout[]): WorkoutFilterStats {
         if (ex.sets) {
           for (const s of ex.sets) {
             totalSets += 1;
-            totalReps += Number(s.reps) || 0;
-            const mult = ex.weightUnit === 'lbs' ? 0.453592 : 1;
-            const setVol = (Number(s.weight) || 0) * (Number(s.reps) || 0) * mult;
-            totalVolumeKg += setVol;
+            const reps = Number(s.reps) || 0;
+            const weight = Number(s.weight) || 0;
+            totalReps += reps;
+
+            // Normalize volume to preferredUnit
+            const exUnit = ex.weightUnit || preferredUnit;
+            let setVol = weight * reps;
+            if (preferredUnit === 'kg' && exUnit === 'lbs') {
+              setVol *= 0.453592;
+            } else if (preferredUnit === 'lbs' && exUnit === 'kg') {
+              setVol *= 2.20462;
+            }
+            totalVolume += setVol;
           }
         }
       }
@@ -75,7 +89,7 @@ export function computeStats(workouts: DailyWorkout[]): WorkoutFilterStats {
     totalWorkouts: workouts.length,
     totalSets,
     totalReps,
-    totalVolumeKg: Math.round(totalVolumeKg),
+    totalVolumeKg: Math.round(totalVolume),
     totalRunDistanceKm: Number(totalRunDistanceKm.toFixed(2)),
     totalRunDurationMinutes: totalRunMinutes,
     avgRunPace: avgPace,
@@ -84,62 +98,90 @@ export function computeStats(workouts: DailyWorkout[]): WorkoutFilterStats {
 }
 
 /**
- * Builds the AI Coach Prompt Report.
+ * Builds a structured, high-value Markdown report designed specifically
+ * for ChatGPT, Claude, and AI Agent fitness analysis.
  */
 export function buildAIPromptReport(
   workouts: DailyWorkout[],
-  filter: TimeFilter
+  filter: TimeFilter,
+  preferredUnit: WeightUnit = 'kg'
 ): string {
-  const stats = computeStats(workouts);
-  const filterLabel = getDateFilterRangeLabel(filter);
+  const stats = computeStats(workouts, preferredUnit);
+  const filterDetails = getDateFilterRangeDetails(filter);
 
-  let text = `WORKOUT & RUNNING LOG REPORT\n`;
-  text += `===============================================\n`;
-  text += `Period: ${filterLabel}\n`;
-  text += `Workouts: ${stats.totalWorkouts} sessions | Volume: ${stats.totalVolumeKg.toLocaleString()} kg | Sets: ${stats.totalSets}\n`;
+  let text = `# 🏋️ WORKOUT & TRAINING PERFORMANCE REPORT\n`;
+  text += `**Timeframe:** ${filterDetails.title} (${filterDetails.subtitle})\n`;
+  text += `**Overview:** ${stats.totalWorkouts} sessions | Total Volume: ${stats.totalVolumeKg.toLocaleString()} ${preferredUnit} | Sets: ${stats.totalSets} | Reps: ${stats.totalReps}\n`;
   if (stats.totalRunDistanceKm > 0) {
-    text += `Runs: ${stats.totalRunDistanceKm} km in ${stats.totalRunDurationMinutes} mins (Avg Pace: ${stats.avgRunPace})\n`;
+    text += `**Cardio / Runs:** ${stats.totalRunDistanceKm} km across ${stats.totalRunDurationMinutes}m (Avg Pace: ${stats.avgRunPace})\n`;
   }
-  text += `===============================================\n\n`;
+  text += `\n---\n\n`;
 
-  text += `INSTRUCTIONS FOR AI AGENT / COACH:\n`;
-  text += `Please evaluate my workouts and runs from ${filterLabel}. Analyze my progressive overload, volume distribution, and judge/suggest what I should do next.\n\n`;
+  text += `## 🎯 PROMPT FOR AI COACH / CHATGPT / AGENT:\n`;
+  text += `> "Act as my elite strength coach and sports performance analyst. Review my training and running logs below from **${filterDetails.title}** (${filterDetails.subtitle}).\n`;
+  text += `> Please give me a concise, expert critique covering:\n`;
+  text += `> 1. **Progressive Overload & Intensity:** Am I challenging myself with proper weight and rep progression across sets?\n`;
+  text += `> 2. **Volume & Muscle Group Balance:** Are any muscle groups overtrained or neglected?\n`;
+  text += `> 3. **Fatigue & Recovery:** Based on the session frequency and density, how is my recovery?\n`;
+  text += `> 4. **Concrete Next Session Targets:** Exact weights, reps, and exercise adjustments for my upcoming workouts."\n\n`;
+  text += `---\n\n`;
 
-  text += `CATEGORIES LOGGED:\n`;
-  Object.entries(stats.categoryCounts).forEach(([cat, count]) => {
-    text += `  - ${cat}: ${count}\n`;
-  });
-  text += `\n`;
+  text += `## 📊 SUMMARY METRICS\n`;
+  text += `- **Sessions Completed:** ${stats.totalWorkouts}\n`;
+  text += `- **Total Volume Lifted:** ${stats.totalVolumeKg.toLocaleString()} ${preferredUnit}\n`;
+  text += `- **Total Sets:** ${stats.totalSets}\n`;
+  text += `- **Total Repetitions:** ${stats.totalReps}\n`;
+  if (stats.totalRunDistanceKm > 0) {
+    text += `- **Total Running Distance:** ${stats.totalRunDistanceKm} km (${stats.totalRunDurationMinutes} minutes, Avg Pace: ${stats.avgRunPace})\n`;
+  }
+  text += `\n### Category / Exercise Volume Distribution:\n`;
+  if (Object.keys(stats.categoryCounts).length === 0) {
+    text += `  (No exercises recorded)\n`;
+  } else {
+    Object.entries(stats.categoryCounts).forEach(([cat, count]) => {
+      text += `- **${cat}:** ${count} sets / sessions\n`;
+    });
+  }
+  text += `\n---\n\n`;
 
-  text += `DAILY LOGS:\n`;
-  text += `-----------------------------------------------\n`;
+  text += `## 📅 DETAILED SESSION LOGS\n\n`;
 
   if (workouts.length === 0) {
-    text += `No workouts logged during this timeframe.\n`;
+    text += `*No workouts logged during this timeframe (${filterDetails.subtitle}).*\n`;
   } else {
     const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date));
 
     sorted.forEach((w) => {
-      text += `\nDate: ${w.date} (${formatDisplayDate(w.date)})\n`;
-      if (w.title) text += `Title: ${w.title}\n`;
+      const displayDate = formatDisplayDate(w.date);
+      text += `### 🗓️ ${w.date} (${displayDate})${w.title ? ` — "${w.title}"` : ''}\n\n`;
 
       if (w.exercises && w.exercises.length > 0) {
         w.exercises.forEach((ex) => {
-          text += `  ${ex.categoryName}:\n`;
+          const unit = ex.weightUnit || preferredUnit;
+          text += `#### 💪 ${ex.categoryName} (${unit})\n`;
+          text += `| Set | Weight | Reps | Set Volume | Status |\n`;
+          text += `|:---:|:---:|:---:|:---:|:---:|\n`;
+
           ex.sets.forEach((s) => {
-            text += `    Set ${s.setNumber}: ${s.weight} ${ex.weightUnit} x ${s.reps} reps\n`;
+            const setVol = (Number(s.weight) || 0) * (Number(s.reps) || 0);
+            const statusIcon = s.completed ? '✅ Done' : '⏳ Pending';
+            text += `| #${s.setNumber} | ${s.weight} ${unit} | ${s.reps} | ${setVol.toLocaleString()} ${unit} | ${statusIcon} |\n`;
           });
+          text += `\n`;
         });
       }
 
       if (w.runs && w.runs.length > 0) {
+        text += `#### 🏃 Running / Cardio\n`;
         w.runs.forEach((r) => {
           const pace =
             r.pace || calculatePace(r.distance, r.durationMinutes, r.durationSeconds);
-          text += `  ${r.categoryName}: ${r.distance} ${r.distanceUnit} in ${r.durationMinutes}m ${r.durationSeconds}s (${pace})\n`;
+          text += `- **${r.categoryName}:** ${r.distance} ${r.distanceUnit} in ${r.durationMinutes}m ${r.durationSeconds}s (Pace: ${pace})\n`;
         });
+        text += `\n`;
       }
-      text += `-----------------------------------------------\n`;
+
+      text += `---\n\n`;
     });
   }
 
@@ -151,18 +193,19 @@ export function buildAIPromptReport(
  */
 export function buildWhatsAppReport(
   workouts: DailyWorkout[],
-  filter: TimeFilter
+  filter: TimeFilter,
+  preferredUnit: WeightUnit = 'kg'
 ): string {
-  const stats = computeStats(workouts);
-  const filterLabel = getDateFilterRangeLabel(filter);
+  const stats = computeStats(workouts, preferredUnit);
+  const filterDetails = getDateFilterRangeDetails(filter);
 
-  let text = `*WORKOUT & RUNNING REPORT*\n`;
-  text += `*Period:* ${filterLabel}\n`;
-  text += `*Stats:* ${stats.totalWorkouts} workouts | ${stats.totalVolumeKg.toLocaleString()} kg volume | ${stats.totalSets} sets\n`;
+  let text = `*🏋️ WORKOUT & PERFORMANCE REPORT*\n`;
+  text += `*Period:* ${filterDetails.title} (${filterDetails.subtitle})\n`;
+  text += `*Stats:* ${stats.totalWorkouts} sessions | ${stats.totalVolumeKg.toLocaleString()} ${preferredUnit} volume | ${stats.totalSets} sets\n`;
   if (stats.totalRunDistanceKm > 0) {
-    text += `*Runs:* ${stats.totalRunDistanceKm} km (${stats.totalRunDurationMinutes} min, avg pace ${stats.avgRunPace})\n`;
+    text += `*Runs:* ${stats.totalRunDistanceKm} km (${stats.totalRunDurationMinutes}m, avg pace ${stats.avgRunPace})\n`;
   }
-  text += `\n*Prompt for AI Coach:* Please review my logs below, judge my progress, and suggest what to do next!\n\n`;
+  text += `\n*Prompt for AI Coach:* Review my training logs below from ${filterDetails.subtitle}, analyze my progressive overload, and suggest what to do next!\n\n`;
 
   const sorted = [...workouts].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -173,10 +216,11 @@ export function buildWhatsAppReport(
 
     if (w.exercises) {
       w.exercises.forEach((ex) => {
+        const unit = ex.weightUnit || preferredUnit;
         const setStrings = ex.sets
-          .map((s) => `${s.weight}${ex.weightUnit}x${s.reps}`)
+          .map((s) => `${s.weight}${unit}x${s.reps}${s.completed ? '✓' : ''}`)
           .join(', ');
-        text += `- *${ex.categoryName}:* ${setStrings}\n`;
+        text += `• *${ex.categoryName}:* ${setStrings}\n`;
       });
     }
 
@@ -184,7 +228,7 @@ export function buildWhatsAppReport(
       w.runs.forEach((r) => {
         const pace =
           r.pace || calculatePace(r.distance, r.durationMinutes, r.durationSeconds);
-        text += `- *${r.categoryName}:* ${r.distance}${r.distanceUnit} in ${r.durationMinutes}m${r.durationSeconds}s (${pace})\n`;
+        text += `• 🏃 *${r.categoryName}:* ${r.distance}${r.distanceUnit} in ${r.durationMinutes}m${r.durationSeconds}s (${pace})\n`;
       });
     }
     text += `\n`;
@@ -194,41 +238,59 @@ export function buildWhatsAppReport(
 }
 
 /**
- * Generates an HTML report suitable for PDF rendering with expo-print.
+ * Generates an executive HTML report suitable for PDF rendering with expo-print.
  */
 export function generateHtmlReport(
   workouts: DailyWorkout[],
-  filter: TimeFilter
+  filter: TimeFilter,
+  preferredUnit: WeightUnit = 'kg'
 ): string {
-  const stats = computeStats(workouts);
-  const filterLabel = getDateFilterRangeLabel(filter);
+  const stats = computeStats(workouts, preferredUnit);
+  const filterDetails = getDateFilterRangeDetails(filter);
 
   const workoutCardsHtml = workouts
     .map((w) => {
       const exercisesHtml = (w.exercises || [])
         .map(
           (ex) => `
-        <div style="margin-bottom: 12px; background: #f8fafc; padding: 10px; border-radius: 8px;">
-          <div style="font-weight: 700; font-size: 14px; color: #0f172a; margin-bottom: 6px;">
-            ${ex.categoryName}
+        <div style="margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; page-break-inside: avoid;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-weight: 700; font-size: 14px; color: #0f172a;">
+              ${ex.categoryName}
+            </div>
+            <span style="font-size: 11px; background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-weight: 600;">
+              ${ex.weightUnit || preferredUnit}
+            </span>
           </div>
           <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-            <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #e2e8f0;">
-              <th style="padding: 4px 6px;">Set</th>
-              <th style="padding: 4px 6px;">Weight</th>
-              <th style="padding: 4px 6px;">Reps</th>
-            </tr>
-            ${ex.sets
-              .map(
-                (s) => `
-              <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 4px 6px; font-weight: 600;">#${s.setNumber}</td>
-                <td style="padding: 4px 6px; font-weight: 600; color: #0284c7;">${s.weight} ${ex.weightUnit}</td>
-                <td style="padding: 4px 6px;">${s.reps}</td>
+            <thead>
+              <tr style="color: #64748b; text-align: left; border-bottom: 1px solid #cbd5e1;">
+                <th style="padding: 6px 8px; width: 40px;">Set</th>
+                <th style="padding: 6px 8px;">Weight</th>
+                <th style="padding: 6px 8px;">Reps</th>
+                <th style="padding: 6px 8px;">Set Volume</th>
+                <th style="padding: 6px 8px; text-align: right;">Status</th>
               </tr>
-            `
-              )
-              .join('')}
+            </thead>
+            <tbody>
+              ${ex.sets
+                .map((s) => {
+                  const setVol =
+                    (Number(s.weight) || 0) * (Number(s.reps) || 0);
+                  return `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: ${s.completed ? '#f0fdf4' : '#ffffff'};">
+                  <td style="padding: 6px 8px; font-weight: 700; color: #475569;">#${s.setNumber}</td>
+                  <td style="padding: 6px 8px; font-weight: 700; color: #0284c7;">${s.weight} ${ex.weightUnit || preferredUnit}</td>
+                  <td style="padding: 6px 8px; font-weight: 600;">${s.reps}</td>
+                  <td style="padding: 6px 8px; color: #64748b;">${setVol.toLocaleString()} ${ex.weightUnit || preferredUnit}</td>
+                  <td style="padding: 6px 8px; text-align: right; color: ${s.completed ? '#16a34a' : '#94a3b8'}; font-weight: 600;">
+                    ${s.completed ? '✓ Done' : 'Pending'}
+                  </td>
+                </tr>
+              `;
+                })
+                .join('')}
+            </tbody>
           </table>
         </div>
       `
@@ -240,12 +302,17 @@ export function generateHtmlReport(
           const pace =
             r.pace || calculatePace(r.distance, r.durationMinutes, r.durationSeconds);
           return `
-          <div style="margin-bottom: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 10px; border-radius: 8px;">
-            <div style="font-weight: 700; font-size: 14px; color: #065f46;">
-              ${r.categoryName}: ${r.distance} ${r.distanceUnit}
+          <div style="margin-bottom: 12px; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 12px; border-radius: 8px; page-break-inside: avoid;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 700; font-size: 14px; color: #065f46;">
+                🏃 ${r.categoryName}: ${r.distance} ${r.distanceUnit}
+              </span>
+              <span style="font-size: 12px; font-weight: 700; color: #047857;">
+                Pace: ${pace}
+              </span>
             </div>
             <div style="margin-top: 4px; font-size: 13px; color: #047857;">
-              Time: ${r.durationMinutes}m ${r.durationSeconds}s &bull; Pace: ${pace}
+              Duration: ${r.durationMinutes}m ${r.durationSeconds}s
             </div>
           </div>
         `;
@@ -253,10 +320,10 @@ export function generateHtmlReport(
         .join('');
 
       return `
-      <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 16px; background: #ffffff;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
-          <span style="font-size: 15px; font-weight: 700; color: #0f172a;">${w.date} (${formatDisplayDate(w.date)})</span>
-          ${w.title ? `<span style="font-size: 13px; font-weight: 600; color: #2563eb;">${w.title}</span>` : ''}
+      <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 18px; background: #ffffff; page-break-inside: avoid;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+          <span style="font-size: 16px; font-weight: 800; color: #0f172a;">${w.date} &bull; ${formatDisplayDate(w.date)}</span>
+          ${w.title ? `<span style="font-size: 13px; font-weight: 700; color: #0284c7; background: #f0f9ff; padding: 2px 8px; border-radius: 6px;">${w.title}</span>` : ''}
         </div>
         ${exercisesHtml}
         ${runsHtml}
@@ -279,12 +346,12 @@ export function generateHtmlReport(
           background: #ffffff;
         }
         .header {
-          border-bottom: 2px solid #0284c7;
-          padding-bottom: 12px;
+          border-bottom: 3px solid #0284c7;
+          padding-bottom: 14px;
           margin-bottom: 20px;
         }
         .title {
-          font-size: 24px;
+          font-size: 26px;
           font-weight: 800;
           color: #0f172a;
           margin: 0;
@@ -292,23 +359,24 @@ export function generateHtmlReport(
         .subtitle {
           font-size: 14px;
           color: #64748b;
-          margin-top: 4px;
+          margin-top: 6px;
+          font-weight: 600;
         }
         .stats-grid {
           display: grid;
           grid-template-columns: repeat(4, 1fr);
-          gap: 10px;
-          margin-bottom: 20px;
+          gap: 12px;
+          margin-bottom: 24px;
         }
         .stat-card {
           background: #f8fafc;
           border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          padding: 10px;
+          border-radius: 10px;
+          padding: 12px;
           text-align: center;
         }
         .stat-val {
-          font-size: 18px;
+          font-size: 20px;
           font-weight: 800;
           color: #0284c7;
         }
@@ -316,14 +384,19 @@ export function generateHtmlReport(
           font-size: 11px;
           text-transform: uppercase;
           color: #64748b;
-          font-weight: 600;
+          font-weight: 700;
+          margin-top: 4px;
+        }
+        @media print {
+          body { padding: 0; }
+          .page-break { page-break-after: always; }
         }
       </style>
     </head>
     <body>
       <div class="header">
-        <h1 class="title">Workout & Run Log Report</h1>
-        <div class="subtitle">Filtered: ${filterLabel}</div>
+        <h1 class="title">🏋️ Workout & Training Report</h1>
+        <div class="subtitle">Timeframe: ${filterDetails.title} &bull; ${filterDetails.subtitle}</div>
       </div>
 
       <div class="stats-grid">
@@ -332,8 +405,8 @@ export function generateHtmlReport(
           <div class="stat-label">Workouts</div>
         </div>
         <div class="stat-card">
-          <div class="stat-val">${stats.totalVolumeKg.toLocaleString()} kg</div>
-          <div class="stat-label">Volume</div>
+          <div class="stat-val">${stats.totalVolumeKg.toLocaleString()} ${preferredUnit}</div>
+          <div class="stat-label">Total Volume</div>
         </div>
         <div class="stat-card">
           <div class="stat-val">${stats.totalSets}</div>
@@ -341,7 +414,7 @@ export function generateHtmlReport(
         </div>
         <div class="stat-card">
           <div class="stat-val">${stats.totalRunDistanceKm} km</div>
-          <div class="stat-label">Run Distance</div>
+          <div class="stat-label">Cardio Distance</div>
         </div>
       </div>
 
@@ -351,6 +424,22 @@ export function generateHtmlReport(
     </body>
   </html>
   `;
+}
+
+export async function shareReportSheet(
+  text: string,
+  title = 'Workout Report'
+): Promise<boolean> {
+  try {
+    await Share.share({
+      title,
+      message: text,
+    });
+    return true;
+  } catch (error) {
+    console.error('Share sheet error:', error);
+    return false;
+  }
 }
 
 export async function shareToWhatsApp(text: string): Promise<boolean> {
@@ -386,17 +475,18 @@ export async function shareToWhatsApp(text: string): Promise<boolean> {
 
 export async function exportPdfReport(
   workouts: DailyWorkout[],
-  filter: TimeFilter
+  filter: TimeFilter,
+  preferredUnit: WeightUnit = 'kg'
 ): Promise<string | null> {
   try {
-    const html = generateHtmlReport(workouts, filter);
+    const html = generateHtmlReport(workouts, filter, preferredUnit);
     const { uri } = await Print.printToFileAsync({ html });
     const isAvailable = await Sharing.isAvailableAsync();
     if (isAvailable) {
       await Sharing.shareAsync(uri, {
         UTI: '.pdf',
         mimeType: 'application/pdf',
-        dialogTitle: 'Share Workout PDF',
+        dialogTitle: 'Share Workout PDF Report',
       });
     }
     return uri;
@@ -408,10 +498,11 @@ export async function exportPdfReport(
 
 export async function exportTextFileReport(
   workouts: DailyWorkout[],
-  filter: TimeFilter
+  filter: TimeFilter,
+  preferredUnit: WeightUnit = 'kg'
 ): Promise<string | null> {
   try {
-    const text = buildAIPromptReport(workouts, filter);
+    const text = buildAIPromptReport(workouts, filter, preferredUnit);
     const dateTag = new Date().toISOString().slice(0, 10);
     const fileUri = `${FileSystem.cacheDirectory || ''}workout-report-${dateTag}.txt`;
 

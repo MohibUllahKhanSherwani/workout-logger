@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LoggedRun } from '@/types/workout';
@@ -78,6 +79,9 @@ export const RunCard: React.FC<Props> = ({ run }) => {
             <TextInput
               style={styles.statInputInside}
               keyboardType="numeric"
+              selectTextOnFocus
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
               placeholder="0.0"
               placeholderTextColor="#94a3b8"
               defaultValue={run.distance ? String(run.distance) : ''}
@@ -98,6 +102,9 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           <TextInput
             style={styles.statInputStandalone}
             keyboardType="numeric"
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
             placeholder="0"
             placeholderTextColor="#94a3b8"
             defaultValue={run.durationMinutes ? String(run.durationMinutes) : ''}
@@ -114,6 +121,9 @@ export const RunCard: React.FC<Props> = ({ run }) => {
           <TextInput
             style={styles.statInputStandalone}
             keyboardType="numeric"
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
             placeholder="0"
             placeholderTextColor="#94a3b8"
             defaultValue={run.durationSeconds ? String(run.durationSeconds) : ''}

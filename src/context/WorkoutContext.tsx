@@ -7,6 +7,7 @@ import React, {
   useMemo,
 } from 'react';
 import {
+  BackupData,
   CategoryItem,
   DailyWorkout,
   ExerciseType,
@@ -17,10 +18,12 @@ import {
 import {
   deleteCategory,
   deleteWorkout,
+  exportBackupFile,
   getLastExercisePerformance,
   getPreferredWeightUnit,
   getStoredCategories,
   getStoredWorkouts,
+  restoreFromBackup,
   saveCategory,
   saveWorkout,
   setPreferredWeightUnit,
@@ -48,6 +51,8 @@ interface WorkoutContextType {
   deleteCategoryById: (id: string) => Promise<void>;
   deleteWorkoutForDate: (date: string) => Promise<void>;
   getLastPerformance: (categoryId: string) => Promise<string | null>;
+  exportBackup: () => Promise<string | null>;
+  restoreBackup: (backup: BackupData) => Promise<{ workoutCount: number; categoryCount: number }>;
 }
 
 const WorkoutContext = createContext<WorkoutContextType | null>(null);
@@ -283,6 +288,22 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [activeDate]
   );
 
+  const exportBackup = useCallback(async () => {
+    return exportBackupFile();
+  }, []);
+
+  const restoreBackup = useCallback(
+    async (backup: BackupData) => {
+      const result = await restoreFromBackup(backup);
+      await refreshWorkouts();
+      await refreshCategories();
+      const unit = await getPreferredWeightUnit();
+      setPreferredUnitState(unit);
+      return result;
+    },
+    [refreshWorkouts, refreshCategories]
+  );
+
   const value = useMemo(
     () => ({
       workouts,
@@ -305,6 +326,8 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deleteCategoryById,
       deleteWorkoutForDate: deleteWorkoutForDateHandler,
       getLastPerformance,
+      exportBackup,
+      restoreBackup,
     }),
     [
       workouts,
@@ -326,6 +349,8 @@ export const WorkoutProvider: React.FC<{ children: React.ReactNode }> = ({ child
       deleteCategoryById,
       deleteWorkoutForDateHandler,
       getLastPerformance,
+      exportBackup,
+      restoreBackup,
     ]
   );
 
